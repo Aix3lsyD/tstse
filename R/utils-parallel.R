@@ -59,29 +59,49 @@ pmap <- function(X, FUN, cores = 1L) {
   if (.Platform$OS.type == "unix") {
     # Control BLAS threading to prevent thread explosion in forked children
     # On macOS, vecLib (Accelerate) is multi-threaded by default
-    blas_threads <- as.character(getOption("tstse.blas_threads", 1L))
-    blas_vars <- c("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
-                   "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS")
-    old_env <- Sys.getenv(blas_vars, unset = NA)
+    blas_threads <- as.integer(getOption("tstse.blas_threads", 1L))
 
-    Sys.setenv(
-      OPENBLAS_NUM_THREADS = blas_threads,
-      OMP_NUM_THREADS = blas_threads,
-      VECLIB_MAXIMUM_THREADS = blas_threads,
-      MKL_NUM_THREADS = blas_threads
-    )
-    on.exit({
-      for (i in seq_along(blas_vars)) {
-        if (is.na(old_env[i])) {
-          Sys.unsetenv(blas_vars[i])
-        } else {
-          do.call(Sys.setenv, stats::setNames(list(old_env[i]), blas_vars[i]))
-        }
+    # Prefer RhpcBLASctl (works post-initialization, unlike env vars)
+    old_blas_threads <- NULL
+    if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+      old_blas_threads <- RhpcBLASctl::blas_get_num_procs()
+      RhpcBLASctl::blas_set_num_threads(blas_threads)
+      on.exit(RhpcBLASctl::blas_set_num_threads(old_blas_threads), add = TRUE)
+      if (verbose) {
+        message("[tstse] Set BLAS threads to ", blas_threads,
+                " via RhpcBLASctl (was ", old_blas_threads, ")")
       }
-    }, add = TRUE)
+    } else {
+      # Fallback to environment variables (only affects BLAS initialization,
+      # less effective if BLAS already initialized, but doesn't hurt)
+      blas_vars <- c("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
+                     "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS")
+      old_env <- Sys.getenv(blas_vars, unset = NA)
+
+      Sys.setenv(
+        OPENBLAS_NUM_THREADS = blas_threads,
+        OMP_NUM_THREADS = blas_threads,
+        VECLIB_MAXIMUM_THREADS = blas_threads,
+        MKL_NUM_THREADS = blas_threads
+      )
+      on.exit({
+        for (i in seq_along(blas_vars)) {
+          if (is.na(old_env[i])) {
+            Sys.unsetenv(blas_vars[i])
+          } else {
+            do.call(Sys.setenv, stats::setNames(list(old_env[i]), blas_vars[i]))
+          }
+        }
+      }, add = TRUE)
+
+      if (verbose) {
+        message("[tstse] Set BLAS env vars to ", blas_threads,
+                " (RhpcBLASctl not available - install for better thread control)")
+      }
+    }
 
     if (verbose) {
-      message("[tstse] Starting mclapply with ", cores, " cores, BLAS threads = ", blas_threads)
+      message("[tstse] Starting mclapply with ", cores, " cores")
     }
 
     # Unix: use mclapply (fork-based)

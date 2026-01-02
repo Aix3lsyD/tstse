@@ -19,6 +19,7 @@ Suggests:
     cli,
     MASS,
     PolynomF,
+    RhpcBLASctl,
     WeightedPortTest,
     astsa,
     fGarch,
