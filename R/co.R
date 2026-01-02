@@ -72,7 +72,7 @@
 #' cat("AR order:", result$z_order, "\n")
 #'
 #' @export
-co <- function(x, maxp = 5L, method = c("mle", "burg", "yw"),
+co <- function(x, maxp = 5L, method = c("burg", "mle", "yw"),
                type = c("aic", "aicc", "bic")) {
 
   method <- match.arg(method)
@@ -95,7 +95,8 @@ co <- function(x, maxp = 5L, method = c("mle", "burg", "yw"),
   z_x <- stats::resid(d)
 
   # Step 2: Fit AR model to residuals
-  ar_fit <- aic_ar(z_x, p = seq_len(maxp), method = method, type = type)
+  # Use cores = 1L because co() is often called from within parallel contexts
+  ar_fit <- aic_ar(z_x, p = seq_len(maxp), method = method, type = type, cores = 1L)
   pp <- ar_fit$p
   phi <- ar_fit$phi
 

@@ -4,7 +4,7 @@
 \alias{aic_burg}
 \title{AIC/BIC Model Selection for AR Models (Burg Method)}
 \usage{
-aic_burg(x, p = 1:5, type = c("aic", "aicc", "bic"))
+aic_burg(x, p = 1:5, type = c("aic", "aicc", "bic"), cores = 1L)
 }
 \arguments{
 \item{x}{Numeric vector, the time series.}
@@ -12,6 +12,11 @@ aic_burg(x, p = 1:5, type = c("aic", "aicc", "bic"))
 \item{p}{Integer vector, AR orders to compare (default 1:5).}
 
 \item{type}{Character, criterion to use: "aic" (default), "aicc", or "bic".}
+
+\item{cores}{Integer, number of cores for parallel processing.
+Default is 1L (sequential). This function is often called from within
+parallel contexts (e.g., bootstrap loops), so it defaults to sequential
+execution to avoid nested parallelization.}
 }
 \value{
 A list with components (see \code{\link{aic_ar}} for details):

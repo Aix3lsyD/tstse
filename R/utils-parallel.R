@@ -30,6 +30,7 @@ get_cores <- function(cores = NULL) {
 #' Parallel-aware map function
 #'
 #' Uses mclapply on Unix, parLapply on Windows, or lapply if cores = 1.
+#' Includes safeguards against nested parallelization and BLAS thread explosion.
 #'
 #' @param X Vector or list to iterate over
 #' @param FUN Function to apply
@@ -38,8 +39,11 @@ get_cores <- function(cores = NULL) {
 #' @noRd
 pmap <- function(X, FUN, cores = 1L) {
 
+  verbose <- isTRUE(getOption("tstse.parallel_verbose", FALSE))
+
   # Prevent nested parallelization (e.g., bootstrap calling aic_ar)
   if (isTRUE(getOption("tstse.parallel_active"))) {
+    if (verbose) message("[tstse] Nesting guard: forcing sequential execution")
     cores <- 1L
   }
 
@@ -53,10 +57,41 @@ pmap <- function(X, FUN, cores = 1L) {
   on.exit(options(tstse.parallel_active = old_opt), add = TRUE)
 
   if (.Platform$OS.type == "unix") {
-    # Unix: use mclapply (fork-based, simple)
+    # Control BLAS threading to prevent thread explosion in forked children
+    # On macOS, vecLib (Accelerate) is multi-threaded by default
+    blas_threads <- as.character(getOption("tstse.blas_threads", 1L))
+    blas_vars <- c("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
+                   "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS")
+    old_env <- Sys.getenv(blas_vars, unset = NA)
+
+    Sys.setenv(
+      OPENBLAS_NUM_THREADS = blas_threads,
+      OMP_NUM_THREADS = blas_threads,
+      VECLIB_MAXIMUM_THREADS = blas_threads,
+      MKL_NUM_THREADS = blas_threads
+    )
+    on.exit({
+      for (i in seq_along(blas_vars)) {
+        if (is.na(old_env[i])) {
+          Sys.unsetenv(blas_vars[i])
+        } else {
+          do.call(Sys.setenv, stats::setNames(list(old_env[i]), blas_vars[i]))
+        }
+      }
+    }, add = TRUE)
+
+    if (verbose) {
+      message("[tstse] Starting mclapply with ", cores, " cores, BLAS threads = ", blas_threads)
+    }
+
+    # Unix: use mclapply (fork-based)
     parallel::mclapply(X, FUN, mc.cores = cores)
   } else {
     # Windows: use parLapply (socket-based, requires cluster setup)
+    if (verbose) {
+      message("[tstse] Starting parLapply with ", cores, " workers")
+    }
+
     cl <- parallel::makeCluster(cores)
     on.exit(parallel::stopCluster(cl), add = TRUE)
 

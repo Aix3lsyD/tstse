@@ -13,7 +13,7 @@ compare_garch(
   distribution = "norm",
   include_mean = FALSE,
   solver = "hybrid",
-  parallel = TRUE,
+  parallel = FALSE,
   cores = NULL
 )
 

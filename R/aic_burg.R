@@ -6,6 +6,10 @@
 #' @param x Numeric vector, the time series.
 #' @param p Integer vector, AR orders to compare (default 1:5).
 #' @param type Character, criterion to use: "aic" (default), "aicc", or "bic".
+#' @param cores Integer, number of cores for parallel processing.
+#'   Default is 1L (sequential). This function is often called from within
+#'   parallel contexts (e.g., bootstrap loops), so it defaults to sequential
+#'   execution to avoid nested parallelization.
 #'
 #' @return A list with components (see \code{\link{aic_ar}} for details):
 #'   \item{type}{Criterion used}
@@ -20,11 +24,11 @@
 #' @examples
 #' x <- gen_arma(n = 200, phi = c(1.5, -0.75), plot = FALSE, seed = 123)
 #' aic_burg(x, p = 1:5)
-aic_burg <- function(x, p = 1:5, type = c("aic", "aicc", "bic")) {
+aic_burg <- function(x, p = 1:5, type = c("aic", "aicc", "bic"), cores = 1L) {
 
   type <- match.arg(type)
 
-  result <- aic_ar(x = x, p = p, type = type, method = "burg")
+  result <- aic_ar(x = x, p = p, type = type, method = "burg", cores = cores)
 
   # Match original output structure (no method, no xbar, no table)
   structure(

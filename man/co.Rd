@@ -7,7 +7,7 @@
 co(
   x,
   maxp = 5L,
-  method = c("mle", "burg", "yw"),
+  method = c("burg", "mle", "yw"),
   type = c("aic", "aicc", "bic")
 )
 }

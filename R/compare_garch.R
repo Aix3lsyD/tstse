@@ -66,7 +66,7 @@ compare_garch <- function(data,
                           distribution = "norm",
                           include_mean = FALSE,
                           solver = "hybrid",
-                          parallel = TRUE,
+                          parallel = FALSE,
                           cores = NULL) {
 
   # Check required packages
@@ -156,32 +156,10 @@ compare_garch <- function(data,
   }
 
   # Execute fitting (parallel or sequential)
+  # Uses pmap() for consistent parallel handling and nesting guard
   if (parallel && length(order_list) > 1) {
-    if (.Platform$OS.type == "unix") {
-      # Unix/Mac: use mclapply
-      if (is.null(cores)) {
-        cores <- getOption("tstse.cores", max(1, parallel::detectCores() - 1))
-      }
-      results_list <- parallel::mclapply(order_list, fit_single_model, mc.cores = cores)
-    } else {
-      # Windows: use parLapply
-      if (is.null(cores)) {
-        cores <- getOption("tstse.cores", max(1, parallel::detectCores() - 1))
-      }
-      cl <- parallel::makeCluster(cores)
-      on.exit(parallel::stopCluster(cl), add = TRUE)
-
-      # Export required functions and packages to workers
-      parallel::clusterEvalQ(cl, {
-        requireNamespace("rugarch", quietly = TRUE)
-        requireNamespace("WeightedPortTest", quietly = TRUE)
-      })
-      parallel::clusterExport(cl, c("data", "distribution", "include_mean", "solver", "n",
-                                    "has_wlb", ".garch_label", ".extract_garch_diagnostics"),
-                              envir = environment())
-
-      results_list <- parallel::parLapply(cl, order_list, fit_single_model)
-    }
+    cores <- get_cores(cores)
+    results_list <- pmap(order_list, fit_single_model, cores = cores)
   } else {
     # Sequential
     results_list <- lapply(order_list, fit_single_model)
