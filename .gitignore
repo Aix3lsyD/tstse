@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.httr-oauth
+.DS_Store
+.quarto
+R_orig/
+R_tswge/
+reports/
+tstse.Rcheck/

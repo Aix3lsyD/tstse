@@ -1,0 +1,143 @@
+# Tests for wbg_boot() - WBG Bootstrap Trend Test
+
+test_that("wbg_boot returns expected structure", {
+  set.seed(123)
+  x <- rnorm(50)
+
+  result <- wbg_boot(x, nb = 49, maxp = 3, seed = 456)
+
+  expect_type(result, "list")
+  expect_named(result, c("p", "phi", "pvalue", "tco_obs", "nb"))
+  expect_true(result$p >= 0)
+  expect_true(result$pvalue >= 0 && result$pvalue <= 1)
+  expect_equal(result$nb, 49L)
+})
+
+test_that("wbg_boot detects no trend in white noise", {
+  set.seed(111)
+  x <- rnorm(100)  # Pure white noise, no trend
+
+  result <- wbg_boot(x, nb = 99, maxp = 5, seed = 222)
+
+  # Should not detect significant trend
+  expect_true(result$pvalue > 0.05)
+})
+test_that("wbg_boot detects clear trend", {
+  set.seed(333)
+  n <- 100
+  x <- rnorm(n) + 0.15 * seq_len(n)  # Strong trend
+
+  result <- wbg_boot(x, nb = 99, maxp = 5, seed = 444)
+
+  # Should detect significant trend
+  expect_true(result$pvalue < 0.10)
+})
+
+test_that("wbg_boot handles AR(1) with trend", {
+  set.seed(555)
+  n <- 150
+  z <- arima.sim(list(ar = 0.6), n = n)
+  x <- z + 0.1 * seq_len(n)  # AR(1) noise + trend
+
+  result <- wbg_boot(x, nb = 99, maxp = 5, seed = 666)
+
+  # Should still detect trend despite autocorrelation
+  expect_true(result$pvalue < 0.20)
+  # Should detect AR structure
+  expect_true(result$p >= 1)
+})
+
+test_that("wbg_boot is reproducible with seed", {
+  set.seed(777)
+  x <- rnorm(50) + 0.05 * seq_len(50)
+
+  result1 <- wbg_boot(x, nb = 49, seed = 888)
+  result2 <- wbg_boot(x, nb = 49, seed = 888)
+
+  expect_equal(result1$pvalue, result2$pvalue)
+  expect_equal(result1$tco_obs, result2$tco_obs)
+  expect_equal(result1$p, result2$p)
+})
+
+test_that("wbg_boot works with different methods", {
+  set.seed(999)
+  x <- rnorm(50) + 0.05 * seq_len(50)
+
+  result_burg <- wbg_boot(x, nb = 49, method = "burg", seed = 111)
+  result_mle <- wbg_boot(x, nb = 49, method = "mle", seed = 111)
+  result_yw <- wbg_boot(x, nb = 49, method = "yw", seed = 111)
+
+  # All should return valid results
+  expect_true(result_burg$pvalue >= 0 && result_burg$pvalue <= 1)
+  expect_true(result_mle$pvalue >= 0 && result_mle$pvalue <= 1)
+  expect_true(result_yw$pvalue >= 0 && result_yw$pvalue <= 1)
+})
+
+test_that("wbg_boot works with different criteria", {
+  set.seed(222)
+  x <- rnorm(50) + 0.05 * seq_len(50)
+
+  result_aic <- wbg_boot(x, nb = 49, type = "aic", seed = 333)
+  result_bic <- wbg_boot(x, nb = 49, type = "bic", seed = 333)
+
+  # Both should return valid results
+  expect_true(result_aic$pvalue >= 0 && result_aic$pvalue <= 1)
+  expect_true(result_bic$pvalue >= 0 && result_bic$pvalue <= 1)
+})
+
+test_that("wbg_boot validates input", {
+  expect_error(wbg_boot(character(10)), "`x` must be a non-empty numeric vector")
+  expect_error(wbg_boot(numeric(0)), "`x` must be a non-empty numeric vector")
+  expect_error(wbg_boot(1:10, nb = -1), "`nb` must be a positive integer")
+  expect_error(wbg_boot(1:10, maxp = 0), "`maxp` must be a positive integer")
+})
+
+test_that("wbg_boot works with short series", {
+  set.seed(444)
+  x <- rnorm(20)
+
+  # Should work with short series
+  result <- wbg_boot(x, nb = 29, maxp = 2, seed = 555)
+  expect_true(is.finite(result$pvalue))
+})
+
+test_that("wbg_boot handles AR(0) case", {
+  set.seed(666)
+  x <- rnorm(100)  # White noise
+
+  result <- wbg_boot(x, nb = 49, maxp = 5, seed = 777)
+
+  # Might select AR(0) or low order
+  expect_true(result$p >= 0 && result$p <= 5)
+})
+
+test_that("wbg_boot parallel gives consistent results", {
+  skip_on_cran()
+  skip_if(parallel::detectCores() < 2, "Not enough cores for parallel test")
+
+  set.seed(888)
+  x <- rnorm(50) + 0.05 * seq_len(50)
+
+  result_seq <- wbg_boot(x, nb = 49, cores = 1, seed = 999)
+  result_par <- wbg_boot(x, nb = 49, cores = 2, seed = 999)
+
+  # With same seed, results should match
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+})
+
+test_that("wbg_boot matches tswge for basic case", {
+  skip_if_not_installed("tswge")
+
+  set.seed(111)
+  x <- rnorm(100) + 0.05 * seq_len(100)
+
+  result_tstse <- wbg_boot(x, nb = 99, maxp = 5, method = "burg", seed = 222)
+
+  # Compare with tswge (approximate due to implementation differences)
+  result_tswge <- tswge::wbg.boot.wge(x, nb = 99, sn = 222)
+
+  # AR order should match
+  expect_equal(result_tstse$p, result_tswge$p)
+  # p-values should be similar (not exact due to seed handling differences)
+  expect_true(abs(result_tstse$pvalue - result_tswge$pv) < 0.15)
+})
