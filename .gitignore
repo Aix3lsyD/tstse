@@ -4,7 +4,8 @@
 .httr-oauth
 .DS_Store
 .quarto
-R_orig/
+R_extended/
 R_tswge/
 reports/
 tstse.Rcheck/
+CLAUDE.md.old

@@ -113,60 +113,8 @@ gen_aruma <- function(n,
 }
 
 
-#' Build combined nonstationary operator
-#' @noRd
-.build_nonstationary_operator <- function(lambda, s, dlam) {
-  if (dlam == 0 && s == 0) {
-    return(0)
-  }
-
-  # Build seasonal factor: (1 - B^s) represented as c(0,0,...,1) with s elements
-  seas <- NULL
-  if (s > 0) {
-    seas <- rep(0, s)
-    seas[s] <- 1
-  }
-
-  # Combine lambda and seasonal using mult()
-  if (dlam > 0 && s > 0) {
-    result <- mult(lambda, seas)
-    return(result$model_coef)
-  } else if (dlam > 0) {
-    return(lambda)
-  } else {
-    return(seas)
-  }
-}
-
-
-#' Apply inverse of nonstationary operator (integration)
-#' @noRd
-.apply_inverse_operator <- function(y, lambdas, dlams, d, n, spin) {
-  d1 <- d + dlams + 1L
-  nd <- n + d + dlams + 1L
-  ndspin <- nd + spin - 1L
-
-  xfull <- numeric(ndspin)
-
-  if (dlams == 0) {
-    # No additional nonstationary factors, just extract
-    for (i in d1:ndspin) {
-      xfull[i] <- y[i]
-    }
-  } else {
-    # Apply inverse filter: x[t] = y[t] + sum(lambdas[j] * x[t-j])
-    for (i in d1:ndspin) {
-      xfull[i] <- y[i]
-      for (j in seq_len(dlams)) {
-        xfull[i] <- xfull[i] + lambdas[j] * xfull[i - j]
-      }
-    }
-  }
-
-  # Extract after spin-up
-  start_idx <- spin + d1
-  xfull[start_idx:(start_idx + n - 1)]
-}
+# Helper functions .build_nonstationary_operator() and .apply_inverse_operator()
+# are defined in utils_internal.R
 
 
 #' Plot ARUMA realization

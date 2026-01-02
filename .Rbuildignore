@@ -4,9 +4,12 @@
 ^Makefile$
 ^Makefile\.win$
 ^CLAUDE\.md$
+^CLAUDE\.md\.old$
 ^PROGRESS\.md$
 ^DEPENDENCIES\.md$
 ^OPTIMIZATION_AUDIT\.md$
 ^R_orig$
 ^R_tswge$
+^R_extended$
 ^reports$
+^\.claude$

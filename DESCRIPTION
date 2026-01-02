@@ -16,13 +16,23 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Suggests:
     testthat (>= 3.0.0),
+    cli,
     MASS,
     PolynomF,
+    WeightedPortTest,
     astsa,
+    fGarch,
     forecast,
     ggplot2,
+    gt,
+    Kendall,
+    lmtest,
+    nlme,
     nnfor,
+    rugarch,
+    sandwich,
     signal,
+    sn,
     tswge,
     waveslim,
     zoo
