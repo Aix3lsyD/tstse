@@ -38,9 +38,19 @@ get_cores <- function(cores = NULL) {
 #' @noRd
 pmap <- function(X, FUN, cores = 1L) {
 
+  # Prevent nested parallelization (e.g., bootstrap calling aic_ar)
+  if (isTRUE(getOption("tstse.parallel_active"))) {
+    cores <- 1L
+  }
+
   if (cores <= 1L) {
     return(lapply(X, FUN))
   }
+
+  # Set flag before spawning workers to prevent nesting
+  old_opt <- getOption("tstse.parallel_active")
+  options(tstse.parallel_active = TRUE)
+  on.exit(options(tstse.parallel_active = old_opt), add = TRUE)
 
   if (.Platform$OS.type == "unix") {
     # Unix: use mclapply (fork-based, simple)
@@ -48,7 +58,7 @@ pmap <- function(X, FUN, cores = 1L) {
   } else {
     # Windows: use parLapply (socket-based, requires cluster setup)
     cl <- parallel::makeCluster(cores)
-    on.exit(parallel::stopCluster(cl))
+    on.exit(parallel::stopCluster(cl), add = TRUE)
 
     # Export necessary functions to workers
     parallel::clusterExport(cl, varlist = c("backcast", "est_ar", "est_arma"),

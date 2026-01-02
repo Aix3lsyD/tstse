@@ -27,8 +27,8 @@ Fit ARMA models across a grid of orders and display the 5 best by
 the chosen information criterion.
 }
 \details{
-This is a convenience function that calls \code{\link{aic}} and
-displays the top 5 models. For programmatic use, \code{\link{aic}}
+This is a convenience function that calls \code{\link{aic_ts}} and
+displays the top 5 models. For programmatic use, \code{\link{aic_ts}}
 is preferred as it returns the full results.
 }
 \examples{
@@ -41,5 +41,5 @@ aic5(x, p = 0:5, q = 0:3, cores = 2)
 }
 }
 \seealso{
-\code{\link{aic}} for the underlying function.
+\code{\link{aic_ts}} for the underlying function.
 }

@@ -29,7 +29,7 @@ A list with class \code{"factor_comp"} containing:
 a component series. Values before index \code{p} are zero.}
 \item{phi}{AR coefficients from the fitted model.}
 \item{roots}{Complex roots of the AR polynomial, sorted by absolute value.}
-\item{factors}{Factor table from \code{\link[=factor]{factor()}} showing the AR factors.}
+\item{factors}{Factor table from \code{\link[=factor_ts]{factor_ts()}} showing the AR factors.}
 }
 \description{
 Decomposes a time series into components based on the factors of a fitted
@@ -68,6 +68,6 @@ dim(result$components)
 
 }
 \seealso{
-\code{\link[=factor]{factor()}} for displaying AR factors,
+\code{\link[=factor_ts]{factor_ts()}} for displaying AR factors,
 \code{\link[=est_ar]{est_ar()}} for AR model estimation.
 }

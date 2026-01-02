@@ -52,3 +52,16 @@ gen_garch_cpp <- function(n, alpha0, alpha, beta, spin = 1000L, seed = NULL) {
     .Call(`_tstse_gen_garch_cpp`, n, alpha0, alpha, beta, spin, seed)
 }
 
+#' Compute Sen's Slope Estimator (C++ implementation)
+#'
+#' Computes the median of all pairwise slopes for robust trend estimation.
+#' This is an O(n^2/2) operation optimized in C++ for speed.
+#'
+#' @param x Numeric vector of observations
+#' @return The Sen's slope estimate (median of pairwise slopes)
+#'
+#' @noRd
+sen_slope_cpp <- function(x) {
+    .Call(`_tstse_sen_slope_cpp`, x)
+}
+

@@ -170,7 +170,7 @@ fore_sigplusnoise <- function(x, linear = TRUE, freq = 0, max_p = 5L,
   noise <- x - signal_obs
 
   # Select AR order for noise using AIC
-  aic_result <- aic(noise, p = 0:max_p, q = 0)
+  aic_result <- aic_ts(noise, p = 0:max_p, q = 0)
   p <- aic_result$p
 
   # Fit AR model to noise

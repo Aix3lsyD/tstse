@@ -233,7 +233,7 @@ test_that("factor_comp with aic = TRUE selects order", {
 })
 
 
-test_that("factor_comp includes factor() output", {
+test_that("factor_comp includes factor_ts() output", {
   set.seed(102)
   x <- arima.sim(model = list(ar = c(0.5, -0.3)), n = 100)
 

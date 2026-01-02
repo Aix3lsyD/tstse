@@ -20,7 +20,7 @@
 #'     a component series. Values before index `p` are zero.}
 #'   \item{phi}{AR coefficients from the fitted model.}
 #'   \item{roots}{Complex roots of the AR polynomial, sorted by absolute value.}
-#'   \item{factors}{Factor table from [factor()] showing the AR factors.}
+#'   \item{factors}{Factor table from [factor_ts()] showing the AR factors.}
 #'
 #' @details
 #' The function works by:
@@ -41,7 +41,7 @@
 #' so the number of factors is:
 #' \deqn{n_{factors} = n_{real} + n_{complex pairs}}
 #'
-#' @seealso [factor()] for displaying AR factors,
+#' @seealso [factor_ts()] for displaying AR factors,
 #'   [est_ar()] for AR model estimation.
 #'
 #' @examples
@@ -101,7 +101,7 @@ factor_comp <- function(x, p, n_comp, aic = FALSE, plot = TRUE) {
   }
 
   # Get factor decomposition for display
-  factor_result <- factor(phi)
+  factor_result <- factor_ts(phi)
 
   # Find roots of AR polynomial
   # Characteristic equation: 1 - phi_1*z - phi_2*z^2 - ... - phi_p*z^p = 0

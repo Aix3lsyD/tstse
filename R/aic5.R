@@ -15,11 +15,11 @@
 #' @export
 #'
 #' @details
-#' This is a convenience function that calls \code{\link{aic}} and
-#' displays the top 5 models. For programmatic use, \code{\link{aic}}
+#' This is a convenience function that calls \code{\link{aic_ts}} and
+#' displays the top 5 models. For programmatic use, \code{\link{aic_ts}}
 #' is preferred as it returns the full results.
 #'
-#' @seealso \code{\link{aic}} for the underlying function.
+#' @seealso \code{\link{aic_ts}} for the underlying function.
 #'
 #' @examples
 #' x <- gen_arma(n = 200, phi = 0.7, theta = 0.4, plot = FALSE, seed = 123)
@@ -39,9 +39,9 @@ aic5 <- function(x,
 
   cat("---------WORKING... PLEASE WAIT...\n\n\n")
 
-  # Use aic with parallel support
+  # Use aic_ts with parallel support
   result <- tryCatch(
-    aic(x, p = p, q = q, type = type, cores = cores),
+    aic_ts(x, p = p, q = q, type = type, cores = cores),
     error = function(e) NULL
   )
 

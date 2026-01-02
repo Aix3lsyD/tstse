@@ -123,7 +123,7 @@ fore_glambda <- function(x, lambda = 0, offset = 60, phi = 0,
 
   # AR benchmark (AIC selection, max order 8 for future mode, 4 for holdout)
   ar_max <- if (lastn) 4L else 8L
-  ar_fit <- aic(x, p = 0:ar_max, q = 0, type = "aic")
+  ar_fit <- aic_ts(x, p = 0:ar_max, q = 0, type = "aic")
 
   if (!lastn) {
     # Future forecast mode

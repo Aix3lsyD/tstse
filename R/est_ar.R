@@ -70,7 +70,7 @@ est_ar <- function(x, p = 2L, factor = TRUE, method = c("mle", "burg", "yw")) {
 
   # Print factor table if requested
   if (factor) {
-    factor(phi = phi)
+    factor_ts(phi = phi)
   }
 
   # Compute residuals via backcasting

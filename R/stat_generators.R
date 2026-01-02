@@ -187,21 +187,7 @@ make_stat_spearman <- function() {
 #' @export
 make_stat_sen <- function() {
   function(x) {
-    n <- length(x)
-
-    # Pre-allocate for O(n*(n-1)/2) slopes
-    n_slopes <- n * (n - 1L) / 2L
-    slopes <- numeric(n_slopes)
-
-    k <- 1L
-    for (i in seq_len(n - 1L)) {
-      for (j in (i + 1L):n) {
-        slopes[k] <- (x[j] - x[i]) / (j - i)
-        k <- k + 1L
-      }
-    }
-
-    median(slopes)
+    sen_slope_cpp(x)
   }
 }
 

@@ -81,6 +81,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// sen_slope_cpp
+double sen_slope_cpp(NumericVector x);
+RcppExport SEXP _tstse_sen_slope_cpp(SEXP xSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type x(xSEXP);
+    rcpp_result_gen = Rcpp::wrap(sen_slope_cpp(x));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tstse_backcast_cpp", (DL_FUNC) &_tstse_backcast_cpp, 4},
@@ -88,6 +99,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_gegenb_cpp", (DL_FUNC) &_tstse_gegenb_cpp, 3},
     {"_tstse_gen_arch_cpp", (DL_FUNC) &_tstse_gen_arch_cpp, 5},
     {"_tstse_gen_garch_cpp", (DL_FUNC) &_tstse_gen_garch_cpp, 6},
+    {"_tstse_sen_slope_cpp", (DL_FUNC) &_tstse_sen_slope_cpp, 1},
     {NULL, NULL, 0}
 };
 

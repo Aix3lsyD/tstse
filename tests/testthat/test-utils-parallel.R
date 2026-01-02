@@ -68,8 +68,8 @@ test_that("aic produces same results with parallel", {
   set.seed(123)
   x <- rnorm(100)
 
-  result_seq <- aic(x, p = 0:2, q = 0:1, cores = 1)
-  result_par <- aic(x, p = 0:2, q = 0:1, cores = 2)
+  result_seq <- aic_ts(x, p = 0:2, q = 0:1, cores = 1)
+  result_par <- aic_ts(x, p = 0:2, q = 0:1, cores = 2)
 
   expect_equal(result_seq$p, result_par$p)
   expect_equal(result_seq$q, result_par$q)

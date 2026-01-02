@@ -26,13 +26,13 @@
 #' x <- gen_arma(n = 200, phi = 0.7, theta = 0.4, plot = FALSE, seed = 123)
 #'
 #' # Sequential
-#' aic(x, p = 0:3, q = 0:2)
+#' aic_ts(x, p = 0:3, q = 0:2)
 #'
 #' \donttest{
 #' # Parallel (uses multiple cores)
-#' aic(x, p = 0:5, q = 0:3, cores = 2)
+#' aic_ts(x, p = 0:5, q = 0:3, cores = 2)
 #' }
-aic <- function(x,
+aic_ts <- function(x,
                 p = 0:5,
                 q = 0:2,
                 type = c("aic", "aicc", "bic"),

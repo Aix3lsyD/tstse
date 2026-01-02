@@ -33,7 +33,7 @@
 #' Roots on or very close to the unit circle indicate near-nonstationarity
 #' or near-noninvertibility.
 #'
-#' @seealso [factor()] for factoring AR/MA polynomials and finding roots.
+#' @seealso [factor_ts()] for factoring AR/MA polynomials and finding roots.
 #'
 #' @examples
 #' # Plot roots using complex numbers

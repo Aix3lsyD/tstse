@@ -68,5 +68,5 @@ unit_circle(roots = roots)
 
 }
 \seealso{
-\code{\link[=factor]{factor()}} for factoring AR/MA polynomials and finding roots.
+\code{\link[=factor_ts]{factor_ts()}} for factoring AR/MA polynomials and finding roots.
 }

@@ -15,15 +15,15 @@
 #'
 #' @examples
 #' # AR(2) process
-#' factor(phi = c(1.6, -0.9))
+#' factor_ts(phi = c(1.6, -0.9))
 #'
 #' # ARMA(1,1)
-#' factor(phi = 0.7, theta = 0.4)
+#' factor_ts(phi = 0.7, theta = 0.4)
 #'
 #' # Capture results
-#' f <- factor(phi = c(1.6, -0.9), print = FALSE)
+#' f <- factor_ts(phi = c(1.6, -0.9), print = FALSE)
 #' f$ar
-factor <- function(phi = 0, theta = 0, print = TRUE) {
+factor_ts <- function(phi = 0, theta = 0, print = TRUE) {
 
   # Input validation
   if (!is.numeric(phi)) stop("`phi` must be numeric")

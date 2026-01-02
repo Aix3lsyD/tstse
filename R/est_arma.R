@@ -82,7 +82,7 @@ est_arma <- function(x, p = 0L, q = 0L, factor = TRUE) {
 
   # Print factor table if requested
   if (factor && p > 0) {
-    factor(phi = phi, theta = theta)
+    factor_ts(phi = phi, theta = theta)
   }
 
   # Compute residuals via backcasting
