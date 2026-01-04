@@ -51,8 +51,7 @@ burg_aic_select_pure_export <- function(x, maxp = 5L, criterion = "aic") {
 #' Burg AR Fit with AIC Selection (C++ implementation)
 #'
 #' Estimates AR coefficients using Burg algorithm and selects optimal
-#' order via AIC in a single pass (fused computation).
-#' Equivalent to: aic_burg(x, p = 1:maxp, type = "aic")
+#' order via AIC. Matches R's ar.burg() with var.method=1.
 #'
 #' @param x Numeric vector, the time series.
 #' @param maxp Integer, maximum AR order to consider.
@@ -188,25 +187,10 @@ calc_ar_burnin_cpp <- function(phi, n) {
     .Call(`_tstse_calc_ar_burnin_cpp`, phi, n)
 }
 
-#' Fast AR Generation using Rcpp::rnorm (NOT thread-safe)
-#'
-#' Uses R's vectorized rnorm for maximum single-threaded performance.
-#' NOT safe for parallel execution - uses R's global RNG state.
-#'
-#' @param n Integer, series length to generate.
-#' @param phi Numeric vector, AR coefficients.
-#' @param vara Double, innovation variance.
-#' @return Numeric vector of length n.
-#' @keywords internal
-#' @noRd
-gen_ar_rcpp <- function(n, phi, vara = 1.0) {
-    .Call(`_tstse_gen_ar_rcpp`, n, phi, vara)
-}
-
-#' AR Generation with dqrng scalar loop (thread-safe, slower)
+#' AR Generation with dqrng scalar loop (thread-safe)
 #'
 #' Uses dqrng's xoshiro256+ with scalar generation.
-#' Thread-safe but has per-element call overhead.
+#' Thread-safe: creates local RNG instance per call.
 #'
 #' @param n Integer, series length to generate.
 #' @param phi Numeric vector, AR coefficients.
@@ -219,26 +203,11 @@ gen_ar_dqrng_scalar <- function(n, phi, vara, rng_seed) {
     .Call(`_tstse_gen_ar_dqrng_scalar`, n, phi, vara, rng_seed)
 }
 
-#' AR Generation with Armadillo randn (thread-safe)
+#' AR Generation with dqrng Box-Muller (thread-safe, optimized)
 #'
-#' Uses Armadillo's randn with explicit seeding.
-#' Thread-safe when each thread uses different seed.
-#'
-#' @param n Integer, series length to generate.
-#' @param phi Numeric vector, AR coefficients.
-#' @param vara Double, innovation variance.
-#' @param rng_seed Integer, seed for Armadillo's RNG.
-#' @return Numeric vector of length n.
-#' @keywords internal
-#' @noRd
-gen_ar_arma <- function(n, phi, vara, rng_seed) {
-    .Call(`_tstse_gen_ar_arma`, n, phi, vara, rng_seed)
-}
-
-#' AR Generation with dqrng batched Ziggurat (thread-safe, optimized)
-#'
-#' Uses dqrng's fast uniform generation in batches, then applies
-#' Box-Muller transform for normals. Reduces function call overhead.
+#' Uses dqrng's fast uniform generation with Box-Muller transform.
+#' Thread-safe: creates local RNG instance per call.
+#' Generates normals in pairs for efficiency.
 #'
 #' @param n Integer, series length to generate.
 #' @param phi Numeric vector, AR coefficients.
@@ -251,23 +220,10 @@ gen_ar_dqrng_boxmuller <- function(n, phi, vara, rng_seed) {
     .Call(`_tstse_gen_ar_dqrng_boxmuller`, n, phi, vara, rng_seed)
 }
 
-#' Fast AR Generation (C++ implementation) - Original API
-#'
-#' @param n Integer, series length to generate.
-#' @param phi Numeric vector, AR coefficients.
-#' @param vara Double, innovation variance.
-#' @param seed Integer, random seed for reproducibility.
-#' @return Numeric vector of length n.
-#' @keywords internal
-#' @noRd
-gen_ar_cpp <- function(n, phi, vara = 1.0, seed = NULL) {
-    .Call(`_tstse_gen_ar_cpp`, n, phi, vara, seed)
-}
-
-#' Fast AR Generation with External Seed (for parallel) - Original API
+#' Fast AR Generation with External Seed (for parallel use)
 #'
 #' Uses Box-Muller with dqrng - reproducible and thread-safe.
-#' Note: Armadillo is faster but not reproducible across calls.
+#' This is the primary function for parallel bootstrap.
 #'
 #' @param n Integer, series length to generate.
 #' @param phi Numeric vector, AR coefficients.
@@ -278,6 +234,23 @@ gen_ar_cpp <- function(n, phi, vara = 1.0, seed = NULL) {
 #' @noRd
 gen_ar_seeded_cpp <- function(n, phi, vara, rng_seed) {
     .Call(`_tstse_gen_ar_seeded_cpp`, n, phi, vara, rng_seed)
+}
+
+#' Fast AR Generation (C++ implementation)
+#'
+#' Generates AR process using thread-safe dqrng.
+#' If seed is provided, uses it for reproducibility.
+#' If no seed, generates a random seed from R's RNG.
+#'
+#' @param n Integer, series length to generate.
+#' @param phi Numeric vector, AR coefficients.
+#' @param vara Double, innovation variance.
+#' @param seed Integer, random seed for reproducibility (optional).
+#' @return Numeric vector of length n.
+#' @keywords internal
+#' @noRd
+gen_ar_cpp <- function(n, phi, vara = 1.0, seed = NULL) {
+    .Call(`_tstse_gen_ar_cpp`, n, phi, vara, seed)
 }
 
 gen_arch_cpp <- function(n, alpha0, alpha, spin = 1000L, seed = NULL) {
@@ -313,48 +286,64 @@ ols_detrend_full_cpp <- function(x) {
     .Call(`_tstse_ols_detrend_full_cpp`, x)
 }
 
-#' @keywords internal
-#' @noRd
-get_omp_threads <- function() {
-    .Call(`_tstse_get_omp_threads`)
-}
-
-#' @keywords internal
-#' @noRd
-has_openmp <- function() {
-    .Call(`_tstse_has_openmp`)
-}
-
+#' Sequential Bootstrap Test (Baseline)
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of seeds for each iteration.
+#' @param maxp Integer, maximum AR order.
+#' @return Numeric vector of bootstrap t-statistics.
 #' @keywords internal
 #' @noRd
 test_parallel_seq <- function(n, phi, vara, seeds, maxp = 5L) {
     .Call(`_tstse_test_parallel_seq`, n, phi, vara, seeds, maxp)
 }
 
-#' @keywords internal
-#' @noRd
-test_parallel_omp_pure <- function(n, phi, vara, seeds, maxp = 5L) {
-    .Call(`_tstse_test_parallel_omp_pure`, n, phi, vara, seeds, maxp)
-}
-
+#' TBB Parallel Bootstrap Test (Pure C++)
+#'
+#' Uses RcppParallel with pure C++ internals for thread safety.
+#' This is the primary parallel implementation.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of seeds for each iteration.
+#' @param maxp Integer, maximum AR order.
+#' @return Numeric vector of bootstrap t-statistics.
 #' @keywords internal
 #' @noRd
 test_parallel_tbb_pure <- function(n, phi, vara, seeds, maxp = 5L) {
     .Call(`_tstse_test_parallel_tbb_pure`, n, phi, vara, seeds, maxp)
 }
 
+#' TBB Parallel Bootstrap Test (Rcpp Types)
+#'
+#' Uses RcppParallel with Rcpp types internally.
+#' For comparison with pure C++ version.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of seeds for each iteration.
+#' @param maxp Integer, maximum AR order.
+#' @return Numeric vector of bootstrap t-statistics.
 #' @keywords internal
 #' @noRd
 test_parallel_tbb_rcpp <- function(n, phi, vara, seeds, maxp = 5L) {
     .Call(`_tstse_test_parallel_tbb_rcpp`, n, phi, vara, seeds, maxp)
 }
 
-#' @keywords internal
-#' @noRd
-test_parallel_omp <- function(n, phi, vara, seeds, maxp = 5L) {
-    .Call(`_tstse_test_parallel_omp`, n, phi, vara, seeds, maxp)
-}
-
+#' TBB Parallel Bootstrap Test (Default)
+#'
+#' Default parallel bootstrap using pure C++ version.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of seeds for each iteration.
+#' @param maxp Integer, maximum AR order.
+#' @return Numeric vector of bootstrap t-statistics.
 #' @keywords internal
 #' @noRd
 test_parallel_tbb <- function(n, phi, vara, seeds, maxp = 5L) {
@@ -372,5 +361,66 @@ test_parallel_tbb <- function(n, phi, vara, seeds, maxp = 5L) {
 #' @noRd
 sen_slope_cpp <- function(x) {
     .Call(`_tstse_sen_slope_cpp`, x)
+}
+
+#' WBG Bootstrap Kernel (C++ Implementation)
+#'
+#' Runs the bootstrap loop in parallel using TBB.
+#' Each iteration generates an AR series under the null hypothesis
+#' (no trend) and computes the Cochrane-Orcutt t-statistic.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+#' @param maxp Integer, maximum AR order for CO test.
+#' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
+#' @return Numeric vector of bootstrap t-statistics.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic") {
+    .Call(`_tstse_wbg_bootstrap_kernel_cpp`, n, phi, vara, seeds, maxp, criterion)
+}
+
+#' WBG Bootstrap Kernel with Grain Size Control
+#'
+#' Same as wbg_bootstrap_kernel_cpp but with explicit grain size
+#' for performance tuning.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+#' @param maxp Integer, maximum AR order for CO test.
+#' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
+#' @param grain_size Integer, minimum iterations per thread (default 1).
+#' @return Numeric vector of bootstrap t-statistics.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L) {
+    .Call(`_tstse_wbg_bootstrap_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size)
+}
+
+#' WBG Bootstrap Kernel with COBA (C++ Implementation)
+#'
+#' Runs the first-stage bootstrap for COBA adjustment.
+#' Each iteration generates an AR series, computes the CO t-statistic,
+#' AND fits an AR model to get phi coefficients for median model selection.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+#' @param maxp Integer, maximum AR order for CO test and AR fitting.
+#' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
+#' @return List with:
+#'   - tstats: Numeric vector of bootstrap t-statistics
+#'   - phi1_values: Numeric vector of phi(1) = 1 - sum(phi) for each bootstrap
+#'   - phi_matrix: Matrix (nb x maxp) of AR coefficients (zero-padded)
+#'   - orders: Integer vector of selected AR orders
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_coba_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic") {
+    .Call(`_tstse_wbg_bootstrap_coba_kernel_cpp`, n, phi, vara, seeds, maxp, criterion)
 }
 

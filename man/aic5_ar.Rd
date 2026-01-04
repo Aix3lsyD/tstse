@@ -22,8 +22,9 @@ aic5_ar(
 \item{method}{Character, estimation method: "mle" (default), "burg", or "yw".}
 
 \item{cores}{Integer, number of cores for parallel processing.
-Default NULL uses \code{getOption("tstse.cores", 1)}.
-Set to 0 to use all available cores.}
+Default NULL uses sequential processing (cores = 1) to prevent nested
+parallelization when called from within parallel contexts.
+Set explicitly to use parallel processing.}
 }
 \value{
 Invisibly returns a data frame of all orders sorted by criterion.

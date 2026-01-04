@@ -53,6 +53,5 @@ Imports:
     future.apply
 URL: https://github.com/Aix3lsyD/tstse
 BugReports: https://github.com/Aix3lsyD/tstse/issues
-Author: Wayne Woodward [aut],
-    Bivin Sadler [cre]
+Author: Wayne Woodward [aut], Bivin Sadler [cre], Kyle Evans [ctb]
 Maintainer: Bivin Sadler <bsadler@smu.edu>

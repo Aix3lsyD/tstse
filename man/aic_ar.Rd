@@ -22,8 +22,9 @@ aic_ar(
 \item{method}{Character, estimation method: "mle" (default), "burg", or "yw".}
 
 \item{cores}{Integer, number of cores for parallel processing.
-Default NULL uses \code{getOption("tstse.cores", 1)}.
-Set to 0 to use all available cores.}
+Default NULL uses sequential processing (cores = 1) to prevent nested
+parallelization when called from within parallel contexts.
+Set explicitly to use parallel processing.}
 }
 \value{
 A list with components:
@@ -46,7 +47,7 @@ x <- gen_arma(n = 200, phi = c(1.5, -0.75), plot = FALSE, seed = 123)
 aic_ar(x, p = 1:5)
 
 \donttest{
-# Parallel (uses multiple cores)
+# Parallel (uses multiple cores) - must be explicit
 aic_ar(x, p = 1:10, cores = 2)
 }
 }

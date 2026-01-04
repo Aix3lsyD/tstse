@@ -1,5 +1,5 @@
 // parallel_test.cpp - Parallel execution tests for bootstrap
-// Tests both Rcpp and Pure C++ paths with TBB and OpenMP
+// Uses RcppParallel (TBB) for parallelization
 // [[Rcpp::depends(RcppArmadillo, RcppParallel, dqrng, BH)]]
 
 #include <RcppArmadillo.h>
@@ -7,51 +7,26 @@
 #include "types_pure.h"
 #include <vector>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
 using namespace Rcpp;
 
-// Forward declarations - Rcpp versions (from other files)
+// Forward declarations - thread-safe versions
 arma::vec gen_ar_seeded_cpp(int n, const arma::vec& phi, double vara, uint64_t rng_seed);
 double co_tstat_cpp(const arma::vec& x, int maxp, std::string criterion);
-
-// Forward declarations - Pure C++ versions
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
-
-
-// =============================================================================
-// OpenMP Status Functions
-// =============================================================================
-
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-int get_omp_threads() {
-#ifdef _OPENMP
-    return omp_get_max_threads();
-#else
-    return 1;
-#endif
-}
-
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-bool has_openmp() {
-#ifdef _OPENMP
-    return true;
-#else
-    return false;
-#endif
-}
 
 
 // =============================================================================
 // Sequential Baseline (Pure C++)
 // =============================================================================
 
+//' Sequential Bootstrap Test (Baseline)
+//'
+//' @param n Integer, series length.
+//' @param phi Numeric vector, AR coefficients.
+//' @param vara Double, innovation variance.
+//' @param seeds Vector of seeds for each iteration.
+//' @param maxp Integer, maximum AR order.
+//' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
 // [[Rcpp::export]]
@@ -71,33 +46,7 @@ Rcpp::NumericVector test_parallel_seq(int n, const arma::vec& phi, double vara,
 
 
 // =============================================================================
-// OpenMP with Pure C++ (Thread-Safe)
-// =============================================================================
-
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-Rcpp::NumericVector test_parallel_omp_pure(int n, const arma::vec& phi, double vara,
-                                            const std::vector<uint64_t>& seeds,
-                                            int maxp = 5) {
-    const int nb = seeds.size();
-    std::vector<double> results(nb);
-
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-#endif
-    for (int b = 0; b < nb; ++b) {
-        // All functions here are pure C++ - no Rcpp types
-        arma::vec x = gen_ar_seeded_cpp(n, phi, vara, seeds[b]);
-        results[b] = co_tstat_pure(x, maxp, "aic");
-    }
-
-    return Rcpp::wrap(results);
-}
-
-
-// =============================================================================
-// RcppParallel (TBB) with Pure C++
+// RcppParallel (TBB) with Pure C++ - Primary Implementation
 // =============================================================================
 
 struct BootstrapWorkerPure : public RcppParallel::Worker {
@@ -122,6 +71,17 @@ struct BootstrapWorkerPure : public RcppParallel::Worker {
     }
 };
 
+//' TBB Parallel Bootstrap Test (Pure C++)
+//'
+//' Uses RcppParallel with pure C++ internals for thread safety.
+//' This is the primary parallel implementation.
+//'
+//' @param n Integer, series length.
+//' @param phi Numeric vector, AR coefficients.
+//' @param vara Double, innovation variance.
+//' @param seeds Vector of seeds for each iteration.
+//' @param maxp Integer, maximum AR order.
+//' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
 // [[Rcpp::export]]
@@ -140,7 +100,7 @@ Rcpp::NumericVector test_parallel_tbb_pure(int n, const arma::vec& phi, double v
 
 // =============================================================================
 // RcppParallel (TBB) with Rcpp Types (for comparison)
-// Note: This uses co_tstat_cpp which has Rcpp::List internally
+// Note: Uses co_tstat_cpp which has Rcpp::List internally
 // =============================================================================
 
 struct BootstrapWorkerRcpp : public RcppParallel::Worker {
@@ -160,12 +120,23 @@ struct BootstrapWorkerRcpp : public RcppParallel::Worker {
     void operator()(std::size_t begin, std::size_t end) {
         for (std::size_t b = begin; b < end; ++b) {
             arma::vec x = gen_ar_seeded_cpp(n, phi, vara, seeds[b]);
-            // This uses Rcpp::List internally - works with TBB but not OpenMP
+            // This uses Rcpp::List internally - works with TBB
             results[b] = co_tstat_cpp(x, maxp, "aic");
         }
     }
 };
 
+//' TBB Parallel Bootstrap Test (Rcpp Types)
+//'
+//' Uses RcppParallel with Rcpp types internally.
+//' For comparison with pure C++ version.
+//'
+//' @param n Integer, series length.
+//' @param phi Numeric vector, AR coefficients.
+//' @param vara Double, innovation variance.
+//' @param seeds Vector of seeds for each iteration.
+//' @param maxp Integer, maximum AR order.
+//' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
 // [[Rcpp::export]]
@@ -183,25 +154,24 @@ Rcpp::NumericVector test_parallel_tbb_rcpp(int n, const arma::vec& phi, double v
 
 
 // =============================================================================
-// Legacy aliases for backward compatibility
+// Default alias - uses pure C++ version
 // =============================================================================
 
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-Rcpp::NumericVector test_parallel_omp(int n, const arma::vec& phi, double vara,
-                                       const std::vector<uint64_t>& seeds,
-                                       int maxp = 5) {
-    // Use pure C++ version (thread-safe)
-    return test_parallel_omp_pure(n, phi, vara, seeds, maxp);
-}
-
+//' TBB Parallel Bootstrap Test (Default)
+//'
+//' Default parallel bootstrap using pure C++ version.
+//'
+//' @param n Integer, series length.
+//' @param phi Numeric vector, AR coefficients.
+//' @param vara Double, innovation variance.
+//' @param seeds Vector of seeds for each iteration.
+//' @param maxp Integer, maximum AR order.
+//' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
 // [[Rcpp::export]]
 Rcpp::NumericVector test_parallel_tbb(int n, const arma::vec& phi, double vara,
                                        const std::vector<uint64_t>& seeds,
                                        int maxp = 5) {
-    // Use pure C++ version by default
     return test_parallel_tbb_pure(n, phi, vara, seeds, maxp);
 }

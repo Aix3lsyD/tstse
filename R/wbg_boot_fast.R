@@ -1,0 +1,322 @@
+#' Fast WBG Bootstrap Test for Trend (C++ Implementation)
+#'
+#' High-performance bootstrap hypothesis test for trend in time series.
+#' Uses the Woodward-Bottone-Gray (WBG) method with C++ parallelization
+#' via TBB (Intel Threading Building Blocks).
+#'
+#' @param x A numeric vector containing the time series data.
+#' @param nb Number of bootstrap replicates. Default is 399.
+#' @param maxp Maximum AR order for model selection. Default is 5.
+#' @param criterion Character. Information criterion for order selection:
+#'   `"aic"`, `"aicc"`, or `"bic"`. Default is `"aic"`.
+#' @param bootadj Logical. If `TRUE`, performs the COBA (Cochrane-Orcutt
+#'   Bootstrap Adjustment) variance adjustment for improved small-sample
+#'   performance. Default is `FALSE` for maximum speed.
+#' @param seed Integer, random seed for reproducibility. Default NULL.
+#'
+#' @return A list of class "wbg_boot_fast" containing:
+#'   \item{p}{AR order selected for the series under null hypothesis.}
+#'   \item{phi}{AR coefficients for the null model.}
+#'   \item{vara}{Innovation variance for the null model.}
+#'   \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
+#'   \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
+#'   \item{boot_tstats}{Vector of bootstrap t-statistics.}
+#'   \item{n}{Length of input series.}
+#'   \item{nb}{Number of bootstrap replicates used.}
+#'   \item{maxp}{Maximum AR order considered.}
+#'   \item{criterion}{Information criterion used.}
+#'
+#'   If `bootadj = TRUE`, also includes:
+#'   \item{tco_obs_adj}{COBA-adjusted observed t-statistic.}
+#'   \item{pvalue_adj}{COBA-adjusted two-sided p-value.}
+#'   \item{adj_factor}{Variance adjustment factor (C from paper).}
+#'   \item{median_phi}{AR coefficients from the median bootstrap model.}
+#'
+#' @details
+#' This is a high-performance C++ implementation of [wbg_boot()],
+#' optimized for large-scale applications. Key differences:
+#'
+#' \itemize{
+#'   \item Uses Burg algorithm only (most stable for bootstrap)
+#'   \item Parallelization via TBB (works on all platforms)
+#'   \item All bootstrap iterations run in C++ (no R overhead)
+#'   \item Thread-safe RNG (dqrng with xoshiro256+)
+#' }
+#'
+#' Expected speedup is 10-25x compared to [wbg_boot()] depending on
+#' series length and number of available CPU cores.
+#'
+#' The bootstrap procedure:
+#' \enumerate{
+#'   \item Fit Cochrane-Orcutt model to observed data using C++
+#'   \item Fit AR(p) model under null hypothesis (no trend)
+#'   \item Generate `nb` bootstrap series from AR(p) in parallel
+#'   \item Compute CO t-statistic for each bootstrap series
+#'   \item p-value = proportion of |bootstrap t| >= |observed t|
+#' }
+#'
+#' **COBA Adjustment:**
+#' When `bootadj = TRUE`, a second-stage bootstrap adjusts the observed
+#' statistic for variance inflation caused by AR coefficient estimation
+#' bias. This provides better small-sample significance levels but
+#' approximately doubles computation time. The adjustment uses the median
+#' AR coefficients from the first stage, where the "median" is selected
+#' based on phi(1) = 1 - sum(phi) as described in the original paper.
+#'
+#' @references
+#' Woodward, W. A., Bottone, S., and Gray, H. L. (1997). "Improved Tests for
+#' Trend in Time Series Data." *Journal of Agricultural, Biological, and
+#' Environmental Statistics*, 2(4), 403-416.
+#'
+#' @seealso [wbg_boot()] for the original R implementation,
+#'   [wbg_boot_flex()] for flexible statistics with COBA,
+#'   [co()] for Cochrane-Orcutt estimation.
+#'
+#' @examples
+#' # Test series with no trend (should be non-significant)
+#' set.seed(123)
+#' x <- arima.sim(list(ar = 0.7), n = 100)
+#' result <- wbg_boot_fast(x, nb = 199, seed = 456)
+#' print(result)
+#'
+#' # Test series with trend (should be significant)
+#' set.seed(123)
+#' x_trend <- arima.sim(list(ar = 0.7), n = 100) + 0.1 * (1:100)
+#' result <- wbg_boot_fast(x_trend, nb = 199, seed = 456)
+#' print(result)
+#'
+#' # With COBA adjustment for better small-sample performance
+#' result_adj <- wbg_boot_fast(x_trend, nb = 199, bootadj = TRUE, seed = 456)
+#' print(result_adj)
+#'
+#' \dontrun{
+#' # Benchmark comparison
+#' library(microbenchmark)
+#' x <- arima.sim(list(ar = c(0.7, -0.2)), n = 500)
+#' microbenchmark(
+#'   fast = wbg_boot_fast(x, nb = 199, seed = 42),
+#'   fast_coba = wbg_boot_fast(x, nb = 199, bootadj = TRUE, seed = 42),
+#'   original = wbg_boot(x, nb = 199, seed = 42),
+#'   times = 5
+#' )
+#' }
+#'
+#' @export
+wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
+                          criterion = c("aic", "aicc", "bic"),
+                          bootadj = FALSE,
+                          seed = NULL) {
+
+  criterion <- match.arg(criterion)
+
+ # Input validation
+  if (!is.numeric(x) || length(x) == 0) {
+    stop("`x` must be a non-empty numeric vector", call. = FALSE)
+  }
+  if (!is.numeric(nb) || length(nb) != 1 || nb < 1) {
+    stop("`nb` must be a positive integer", call. = FALSE)
+  }
+  if (!is.numeric(maxp) || length(maxp) != 1 || maxp < 1) {
+    stop("`maxp` must be a positive integer", call. = FALSE)
+  }
+
+  x <- as.numeric(x)
+  nb <- as.integer(nb)
+  maxp <- as.integer(maxp)
+  n <- length(x)
+
+  if (n <= maxp + 10) {
+    stop("Series too short: need n > maxp + 10", call. = FALSE)
+  }
+
+  # Set seed for reproducibility
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  # Generate bootstrap seeds upfront (R's RNG, single-threaded)
+  boot_seeds <- as.numeric(sample.int(.Machine$integer.max, nb))
+  if (bootadj) {
+    boot_seeds_adj <- as.numeric(sample.int(.Machine$integer.max, nb))
+  }
+
+  # Step 1: Compute observed CO t-statistic (C++)
+  tco_obs <- co_tstat_cpp(x, maxp, criterion)
+
+  # Step 2: Fit null model (no trend) using R's ar.burg
+  # We use R's ar.burg here because it's well-tested and only runs once
+  fit <- ar.burg(x, order.max = maxp, aic = TRUE)
+  p_null <- fit$order
+  phi_null <- as.numeric(fit$ar)
+  vara_null <- fit$var.pred
+
+  # Handle AR(0) case
+  if (p_null == 0) {
+    phi_null <- numeric(0)
+  }
+
+  # Step 3: Bootstrap
+  if (bootadj) {
+    # === COBA PATH: First bootstrap WITH AR fitting ===
+    boot_result <- wbg_bootstrap_coba_kernel_cpp(
+      n = n,
+      phi = phi_null,
+      vara = vara_null,
+      seeds = boot_seeds,
+      maxp = maxp,
+      criterion = criterion
+    )
+    boot_tstats <- boot_result$tstats
+    phi1_values <- boot_result$phi1_values
+    phi_matrix <- boot_result$phi_matrix
+    orders <- boot_result$orders
+
+    # Find median AR model (per paper: model with phi(1) closest to median)
+    median_idx <- which.min(abs(phi1_values - median(phi1_values)))
+    median_order <- orders[median_idx]
+    median_phi <- if (median_order > 0) {
+      phi_matrix[median_idx, seq_len(median_order)]
+    } else {
+      numeric(0)
+    }
+
+    # Second bootstrap using median phi (reuse existing fast kernel)
+    boot_tstats_adj <- wbg_bootstrap_kernel_cpp(
+      n = n,
+      phi = median_phi,
+      vara = vara_null,
+      seeds = boot_seeds_adj,
+      maxp = maxp,
+      criterion = criterion
+    )
+
+    # Compute adjustment factor (C = sigma_t_tilde* / sigma_t* from paper)
+    adj_factor <- sd(boot_tstats_adj) / sd(boot_tstats)
+    tco_obs_adj <- adj_factor * tco_obs
+    pvalue_adj <- mean(abs(boot_tstats) >= abs(tco_obs_adj))
+
+  } else {
+    # === FAST PATH: No AR fitting in bootstrap ===
+    boot_tstats <- wbg_bootstrap_kernel_cpp(
+      n = n,
+      phi = phi_null,
+      vara = vara_null,
+      seeds = boot_seeds,
+      maxp = maxp,
+      criterion = criterion
+    )
+  }
+
+  # Step 4: Compute p-value (two-sided)
+  pvalue <- mean(abs(boot_tstats) >= abs(tco_obs))
+
+  # Build result
+  result <- list(
+    p           = p_null,
+    phi         = phi_null,
+    vara        = vara_null,
+    pvalue      = pvalue,
+    tco_obs     = tco_obs,
+    boot_tstats = boot_tstats,
+    n           = n,
+    nb          = nb,
+    maxp        = maxp,
+    criterion   = criterion
+  )
+
+  # Add COBA results if computed
+  if (bootadj) {
+    result$tco_obs_adj <- tco_obs_adj
+    result$pvalue_adj <- pvalue_adj
+    result$adj_factor <- adj_factor
+    result$median_phi <- median_phi
+  }
+
+  structure(result, class = "wbg_boot_fast")
+}
+
+
+#' @export
+print.wbg_boot_fast <- function(x, ...) {
+  cat("\nWBG Bootstrap Test for Trend (Fast C++ Implementation)\n")
+  cat("-------------------------------------------------------\n")
+  cat(sprintf("  Series length: %d\n", x$n))
+  cat(sprintf("  Bootstrap replicates: %d\n", x$nb))
+  cat(sprintf("  Max AR order: %d\n", x$maxp))
+  cat(sprintf("  IC criterion: %s\n", x$criterion))
+  cat("\nNull Model (no trend):\n")
+  cat(sprintf("  Selected AR order: %d\n", x$p))
+  if (x$p > 0) {
+    cat(sprintf("  AR coefficients: %s\n",
+                paste(round(x$phi, 4), collapse = ", ")))
+  }
+  cat(sprintf("  Innovation variance: %.4f\n", x$vara))
+  cat("\nTest Results:\n")
+  cat(sprintf("  Observed CO t-stat: %.4f\n", x$tco_obs))
+  cat(sprintf("  Bootstrap p-value: %.4f\n", x$pvalue))
+
+  # COBA results if present
+  if (!is.null(x$pvalue_adj)) {
+    cat("\nCOBA Adjustment:\n")
+    cat(sprintf("  Adjustment factor: %.4f\n", x$adj_factor))
+    cat(sprintf("  Adjusted t-stat: %.4f\n", x$tco_obs_adj))
+    cat(sprintf("  Adjusted p-value: %.4f\n", x$pvalue_adj))
+    if (length(x$median_phi) > 0) {
+      cat(sprintf("  Median AR(%d) phi: %s\n", length(x$median_phi),
+                  paste(round(x$median_phi, 4), collapse = ", ")))
+    }
+  }
+  cat("\n")
+  invisible(x)
+}
+
+
+#' @export
+summary.wbg_boot_fast <- function(object, ...) {
+  cat("\nWBG Bootstrap Test Summary\n")
+  cat("==========================\n\n")
+
+  cat("Data:\n")
+  cat(sprintf("  n = %d, nb = %d, maxp = %d, criterion = %s\n\n",
+              object$n, object$nb, object$maxp, object$criterion))
+
+  cat("Null Hypothesis: No trend (slope = 0)\n")
+  cat(sprintf("  AR(%d) model with variance = %.4f\n\n", object$p, object$vara))
+
+  cat("Test Statistic:\n")
+  cat(sprintf("  Observed CO t = %.4f\n", object$tco_obs))
+  cat(sprintf("  Bootstrap SE = %.4f\n", sd(object$boot_tstats)))
+  cat(sprintf("  Bootstrap mean = %.4f\n\n", mean(object$boot_tstats)))
+
+  cat("Result:\n")
+  sig_level <- if (object$pvalue < 0.001) "***"
+               else if (object$pvalue < 0.01) "**"
+               else if (object$pvalue < 0.05) "*"
+               else if (object$pvalue < 0.1) "."
+               else ""
+  cat(sprintf("  p-value = %.4f %s\n", object$pvalue, sig_level))
+  cat("  Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\n")
+
+  # COBA adjustment results if present
+  if (!is.null(object$pvalue_adj)) {
+    cat("COBA Adjustment (variance correction):\n")
+    cat(sprintf("  Adjustment factor C = %.4f\n", object$adj_factor))
+    cat(sprintf("  Adjusted t-stat = %.4f\n", object$tco_obs_adj))
+    sig_level_adj <- if (object$pvalue_adj < 0.001) "***"
+                     else if (object$pvalue_adj < 0.01) "**"
+                     else if (object$pvalue_adj < 0.05) "*"
+                     else if (object$pvalue_adj < 0.1) "."
+                     else ""
+    cat(sprintf("  Adjusted p-value = %.4f %s\n", object$pvalue_adj, sig_level_adj))
+    if (length(object$median_phi) > 0) {
+      cat(sprintf("  Median model: AR(%d) with phi = %s\n",
+                  length(object$median_phi),
+                  paste(round(object$median_phi, 4), collapse = ", ")))
+    } else {
+      cat("  Median model: AR(0)\n")
+    }
+    cat("\n")
+  }
+
+  invisible(object)
+}

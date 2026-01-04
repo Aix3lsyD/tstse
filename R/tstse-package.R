@@ -3,6 +3,7 @@
 
 ## usethis namespace: start
 #' @importFrom Rcpp sourceCpp
+#' @importFrom RcppParallel RcppParallelLibs
 #' @useDynLib tstse, .registration = TRUE
 ## usethis namespace: end
 NULL

@@ -10,7 +10,7 @@ wbg_boot(
   maxp = 5L,
   method = c("burg", "mle", "yw"),
   type = c("aic", "aicc", "bic"),
-  cores = NULL,
+  cores = 1L,
   seed = NULL
 )
 }
@@ -39,6 +39,7 @@ A list containing:
 \item{phi}{AR coefficients for the null model.}
 \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
+\item{boot_tstats}{Numeric vector of bootstrap t-statistics.}
 \item{nb}{Number of bootstrap replicates used.}
 }
 \description{

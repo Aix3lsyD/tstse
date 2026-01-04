@@ -21,6 +21,7 @@
 #'   \item{phi}{AR coefficients for the null model.}
 #'   \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
 #'   \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
+#'   \item{boot_tstats}{Numeric vector of bootstrap t-statistics.}
 #'   \item{nb}{Number of bootstrap replicates used.}
 #'
 #' @details
@@ -120,29 +121,30 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     # Generate AR(p) series under null (no trend)
     xb <- gen_arma(n = n, phi = phi_null, theta = 0, plot = FALSE)
 
-    # Fit CO and get t-statistic
+    # Fit CO and get t-statistic (return signed value for distribution)
     # co() uses cores = 1L internally - safe for nested calls
     wb <- co(xb, maxp = maxp, method = method, type = type)
-    abs(wb$tco)
+    wb$tco
   }
 
   # Run bootstrap (parallel or sequential)
   if (cores > 1L) {
     boot_results <- pmap(seq_len(nb), boot_fn, cores = cores)
-    tco_boot_abs <- unlist(boot_results)
+    boot_tstats <- unlist(boot_results)
   } else {
-    tco_boot_abs <- vapply(seq_len(nb), boot_fn, numeric(1))
+    boot_tstats <- vapply(seq_len(nb), boot_fn, numeric(1))
   }
 
   # Step 4: Compute p-value
   # Proportion of bootstrap |t| >= observed |t|
-  pvalue <- mean(tco_boot_abs >= abs(tco_obs))
+  pvalue <- mean(abs(boot_tstats) >= abs(tco_obs))
 
   list(
-    p       = p_null,
-    phi     = phi_null,
-    pvalue  = pvalue,
-    tco_obs = tco_obs,
-    nb      = nb
+    p           = p_null,
+    phi         = phi_null,
+    pvalue      = pvalue,
+    tco_obs     = tco_obs,
+    boot_tstats = boot_tstats,
+    nb          = nb
   )
 }
