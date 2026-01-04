@@ -47,6 +47,7 @@
 #' @seealso [fore_arima()], [fore_arma()], [roll_win_rmse_nn()]
 #'
 #' @examples
+#' \donttest{
 #' # Generate AR(2) data
 #' set.seed(123)
 #' x <- gen_arma(n = 150, phi = c(1.5, -0.75), plot = FALSE)
@@ -55,9 +56,12 @@
 #' result <- roll_win_rmse(x, horizon = 5, phi = c(1.5, -0.75))
 #' cat("Mean RMSE:", result$rmse, "\n")
 #' cat("Number of windows:", result$n_windows, "\n")
+#' }
 #'
+#' \dontrun{
 #' # With parallel processing (if multiple cores available)
 #' result <- roll_win_rmse(x, horizon = 5, phi = c(1.5, -0.75), cores = 2)
+#' }
 #'
 #' @export
 roll_win_rmse <- function(x, horizon = 1L, phi = 0, theta = 0,

@@ -1,5 +1,0 @@
-CXX_STD = CXX17
-
-TBB_LIB = $(shell "${R_HOME}/bin/Rscript" -e "cat(system.file('lib', package='RcppParallel'))")
-
-PKG_LIBS = -L$(TBB_LIB) -ltbb -ltbbmalloc -Wl,-rpath,$(TBB_LIB)

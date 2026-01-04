@@ -1,0 +1,6 @@
+## Makevars.in for tstse package
+## This file is processed by configure to create Makevars
+
+CXX_STD = CXX17
+
+PKG_LIBS = -L@TBB_LIB@ -ltbb -ltbbmalloc -Wl,-rpath,@TBB_LIB@

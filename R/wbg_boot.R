@@ -49,6 +49,7 @@
 #'   [aic_ar()] for AR order selection.
 #'
 #' @examples
+#' \donttest{
 #' # Test series with no trend (should be non-significant)
 #' set.seed(123)
 #' x <- arima.sim(list(ar = 0.7), n = 100)
@@ -60,6 +61,7 @@
 #' x_trend <- arima.sim(list(ar = 0.7), n = 100) + 0.1 * (1:100)
 #' result <- wbg_boot(x_trend, nb = 99, seed = 456)
 #' cat("p-value:", result$pvalue, "\n")
+#' }
 #'
 #' @export
 wbg_boot <- function(x, nb = 399L, maxp = 5L,

@@ -8,7 +8,7 @@
 #' x <- gen_arma(n = 200, phi = c(1.5, -0.75), plot = FALSE, seed = 123)
 #' aic5_ar(x, p = 0:5)
 #'
-#' \donttest{
+#' \dontrun{
 #' # Parallel (uses multiple cores)
 #' aic5_ar(x, p = 0:8, cores = 2)
 #' }

@@ -28,7 +28,7 @@
 #' # Sequential (default)
 #' aic_ar(x, p = 1:5)
 #'
-#' \donttest{
+#' \dontrun{
 #' # Parallel (uses multiple cores) - must be explicit
 #' aic_ar(x, p = 1:10, cores = 2)
 #' }

@@ -78,7 +78,7 @@ fit <- est_garma(x, u_range = c(0.6, 0.9, 0.1),
                  lambda_range = c(0.1, 0.4, 0.1), p_max = 3)
 print(fit)
 
-\donttest{
+\dontrun{
 # Finer grid with parallel processing
 fit2 <- est_garma(x, u_range = c(0.7, 0.9, 0.05),
                   lambda_range = c(0.2, 0.4, 0.05),

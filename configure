@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# configure script for tstse package
+# Generates src/Makevars from src/Makevars.in
+
+# Find R_HOME if not set
+if test -z "${R_HOME}"; then
+  R_HOME=$(R RHOME)
+fi
+
+# Get the RcppParallel lib path
+TBB_LIB=$("${R_HOME}/bin/Rscript" -e "cat(system.file('lib', package='RcppParallel'))")
+
+# Generate Makevars from template
+sed -e "s|@TBB_LIB@|${TBB_LIB}|g" src/Makevars.in > src/Makevars
+
+echo "Configured src/Makevars with TBB_LIB=${TBB_LIB}"

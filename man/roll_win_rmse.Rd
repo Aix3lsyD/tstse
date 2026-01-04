@@ -72,6 +72,7 @@ With parallelization enabled, each window is processed independently
 across multiple cores for significant speedup on large series.
 }
 \examples{
+\donttest{
 # Generate AR(2) data
 set.seed(123)
 x <- gen_arma(n = 150, phi = c(1.5, -0.75), plot = FALSE)
@@ -80,9 +81,12 @@ x <- gen_arma(n = 150, phi = c(1.5, -0.75), plot = FALSE)
 result <- roll_win_rmse(x, horizon = 5, phi = c(1.5, -0.75))
 cat("Mean RMSE:", result$rmse, "\n")
 cat("Number of windows:", result$n_windows, "\n")
+}
 
+\dontrun{
 # With parallel processing (if multiple cores available)
 result <- roll_win_rmse(x, horizon = 5, phi = c(1.5, -0.75), cores = 2)
+}
 
 }
 \seealso{

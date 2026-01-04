@@ -73,6 +73,7 @@
 #'   [co()] for Cochrane-Orcutt estimation.
 #'
 #' @examples
+#' \donttest{
 #' # Test series with no trend (should be non-significant)
 #' set.seed(123)
 #' x <- arima.sim(list(ar = 0.7), n = 100)
@@ -88,6 +89,7 @@
 #' # With COBA adjustment for better small-sample performance
 #' result_adj <- wbg_boot_fast(x_trend, nb = 199, bootadj = TRUE, seed = 456)
 #' print(result_adj)
+#' }
 #'
 #' \dontrun{
 #' # Benchmark comparison

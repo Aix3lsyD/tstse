@@ -14,3 +14,5 @@
 ^reports$
 ^\.claude$
 ^papers$
+^src/Makevars$
+^src/Makevars\.win$

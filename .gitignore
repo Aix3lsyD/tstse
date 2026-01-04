@@ -10,3 +10,8 @@ reports/
 tstse.Rcheck/
 CLAUDE.md.old
 papers/
+..Rcheck/
+
+# Auto-generated Makevars (created by configure)
+src/Makevars
+src/Makevars.win

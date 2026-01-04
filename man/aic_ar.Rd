@@ -46,7 +46,7 @@ x <- gen_arma(n = 200, phi = c(1.5, -0.75), plot = FALSE, seed = 123)
 # Sequential (default)
 aic_ar(x, p = 1:5)
 
-\donttest{
+\dontrun{
 # Parallel (uses multiple cores) - must be explicit
 aic_ar(x, p = 1:10, cores = 2)
 }

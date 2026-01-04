@@ -64,6 +64,7 @@ used in \code{\link[=co]{co()}}, especially for small to moderate sample sizes w
 highly autocorrelated errors.
 }
 \examples{
+\donttest{
 # Test series with no trend (should be non-significant)
 set.seed(123)
 x <- arima.sim(list(ar = 0.7), n = 100)
@@ -75,6 +76,7 @@ set.seed(123)
 x_trend <- arima.sim(list(ar = 0.7), n = 100) + 0.1 * (1:100)
 result <- wbg_boot(x_trend, nb = 99, seed = 456)
 cat("p-value:", result$pvalue, "\n")
+}
 
 }
 \references{

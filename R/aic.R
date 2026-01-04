@@ -23,12 +23,14 @@
 #' @export
 #'
 #' @examples
+#' \donttest{
 #' x <- gen_arma(n = 200, phi = 0.7, theta = 0.4, plot = FALSE, seed = 123)
 #'
 #' # Sequential
 #' aic_ts(x, p = 0:3, q = 0:2)
+#' }
 #'
-#' \donttest{
+#' \dontrun{
 #' # Parallel (uses multiple cores)
 #' aic_ts(x, p = 0:5, q = 0:3, cores = 2)
 #' }

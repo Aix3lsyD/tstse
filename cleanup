@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# cleanup script for tstse package
+# Removes files created by configure
+
+rm -f src/Makevars src/Makevars.win

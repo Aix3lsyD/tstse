@@ -32,10 +32,12 @@ displays the top 5 models. For programmatic use, \code{\link{aic_ts}}
 is preferred as it returns the full results.
 }
 \examples{
+\donttest{
 x <- gen_arma(n = 200, phi = 0.7, theta = 0.4, plot = FALSE, seed = 123)
 aic5(x, p = 0:5, q = 0:2)
+}
 
-\donttest{
+\dontrun{
 # Parallel (uses multiple cores)
 aic5(x, p = 0:5, q = 0:3, cores = 2)
 }

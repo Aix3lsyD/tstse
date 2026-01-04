@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# configure.win script for tstse package (Windows)
+# Generates src/Makevars.win from src/Makevars.win.in
+
+# Get the RcppParallel paths using R
+RCPP_PARALLEL_SO_PATH=$("${R_HOME}/bin${R_ARCH_BIN}/Rscript.exe" -e "cat(system.file('libs', package = 'RcppParallel'))")
+RCPP_PARALLEL_LIBS=$("${R_HOME}/bin${R_ARCH_BIN}/Rscript.exe" -e "RcppParallel::RcppParallelLibs()")
+
+# Generate Makevars.win from template
+sed -e "s|@RCPP_PARALLEL_SO_PATH@|${RCPP_PARALLEL_SO_PATH}|g" \
+    -e "s|@RCPP_PARALLEL_LIBS@|${RCPP_PARALLEL_LIBS}|g" \
+    src/Makevars.win.in > src/Makevars.win
+
+echo "Configured src/Makevars.win"
