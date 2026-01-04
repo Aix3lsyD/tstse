@@ -159,6 +159,98 @@ arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara,
 
 
 // =============================================================================
+// Buffer-based AR Generation (for worker reuse)
+// =============================================================================
+
+// Helper: fill vector with Box-Muller normals
+static void fill_normals_boxmuller(arma::vec& out, dqrng::xoshiro256plus& rng, double sd) {
+    const int n = out.n_elem;
+    std::uniform_real_distribution<double> unif(0.0, 1.0);
+    const double two_pi = 2.0 * M_PI;
+
+    int i = 0;
+    while (i < n) {
+        double u1 = unif(rng);
+        double u2 = unif(rng);
+        while (u1 <= 1e-15) u1 = unif(rng);
+
+        double r = sd * std::sqrt(-2.0 * std::log(u1));
+        double theta = two_pi * u2;
+
+        out[i] = r * std::cos(theta);
+        if (i + 1 < n) {
+            out[i + 1] = r * std::sin(theta);
+        }
+        i += 2;
+    }
+}
+
+// Helper: generate single normal using Box-Muller
+static double generate_normal_boxmuller(dqrng::xoshiro256plus& rng, double sd) {
+    std::uniform_real_distribution<double> unif(0.0, 1.0);
+    double u1 = unif(rng);
+    double u2 = unif(rng);
+    while (u1 <= 1e-15) u1 = unif(rng);
+    return sd * std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * M_PI * u2);
+}
+
+// Generate AR series directly into provided buffer (avoids copy on return)
+// Uses ring buffer for burn-in to minimize memory allocation
+void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed) {
+    const int n = out.n_elem;
+    const int p = phi.n_elem;
+
+    dqrng::xoshiro256plus rng(rng_seed);
+    const double sd = std::sqrt(vara);
+
+    if (p == 0) {
+        // AR(0): fill directly with normals
+        fill_normals_boxmuller(out, rng, sd);
+        return;
+    }
+
+    const int burn = calc_ar_burnin_cpp(phi, n);
+
+    // Stack buffer for burn-in (ring buffer, only keep last p values)
+    constexpr int MAX_P = 20;
+    double prev[MAX_P] = {0};
+
+    // Run burn-in phase, keeping only last p values in ring buffer
+    for (int t = 0; t < burn; ++t) {
+        double a = generate_normal_boxmuller(rng, sd);
+        double x = a;
+        for (int j = 0; j < p && j <= t; ++j) {
+            int idx = ((t - 1 - j) % MAX_P + MAX_P) % MAX_P;
+            x += phi[j] * prev[idx];
+        }
+        prev[t % MAX_P] = x;
+    }
+
+    // Extract last p values from ring buffer for initial conditions
+    double burn_tail[MAX_P];
+    for (int i = 0; i < p; ++i) {
+        burn_tail[i] = prev[((burn - p + i) % MAX_P + MAX_P) % MAX_P];
+    }
+
+    // Fill output with innovations
+    fill_normals_boxmuller(out, rng, sd);
+
+    // Apply AR recursion using burn_tail for initial dependencies
+    for (int t = 0; t < n; ++t) {
+        for (int j = 0; j < p; ++j) {
+            int lag = t - 1 - j;
+            if (lag >= 0) {
+                out[t] += phi[j] * out[lag];
+            } else {
+                // Use burn-in tail for negative lags
+                out[t] += phi[j] * burn_tail[p + lag];
+            }
+        }
+    }
+}
+
+
+// =============================================================================
 // Primary API Functions
 // =============================================================================
 

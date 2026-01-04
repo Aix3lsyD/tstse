@@ -11,6 +11,7 @@ using namespace Rcpp;
 
 // Forward declarations - thread-safe functions
 arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara, uint64_t rng_seed);
+void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed);
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion);
 
@@ -41,12 +42,15 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
+        // Pre-allocate buffer for this thread chunk (reused across iterations)
+        arma::vec x_buf(n);
+
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series under null (no trend)
-            arma::vec x = gen_ar_dqrng_boxmuller(n, phi, vara, seeds[b]);
+            // Generate AR series directly into buffer (no copy)
+            gen_ar_into(x_buf, phi, vara, seeds[b]);
 
             // Compute CO t-statistic for this bootstrap sample
-            results[b] = co_tstat_pure(x, maxp, criterion);
+            results[b] = co_tstat_pure(x_buf, maxp, criterion);
         }
     }
 };
@@ -159,15 +163,18 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
+        // Pre-allocate buffer for this thread chunk (reused across iterations)
+        arma::vec x_buf(n);
+
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series under null (no trend)
-            arma::vec x = gen_ar_dqrng_boxmuller(n, phi, vara, seeds[b]);
+            // Generate AR series directly into buffer (no copy)
+            gen_ar_into(x_buf, phi, vara, seeds[b]);
 
             // Compute CO t-statistic for this bootstrap sample
-            tstats[b] = co_tstat_pure(x, maxp, criterion);
+            tstats[b] = co_tstat_pure(x_buf, maxp, criterion);
 
             // Fit AR model to bootstrap sample (thread-safe pure C++)
-            BurgResult ar_fit = burg_aic_select_pure(x, maxp, criterion);
+            BurgResult ar_fit = burg_aic_select_pure(x_buf, maxp, criterion);
 
             // Store results
             orders[b] = ar_fit.p;
@@ -226,6 +233,51 @@ Rcpp::List wbg_bootstrap_coba_kernel_cpp(
     WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, criterion, seeds,
                                    tstats, phi1_values, phi_matrix, orders);
     RcppParallel::parallelFor(0, nb, worker);
+
+    return Rcpp::List::create(
+        Rcpp::Named("tstats") = tstats,
+        Rcpp::Named("phi1_values") = phi1_values,
+        Rcpp::Named("phi_matrix") = phi_matrix,
+        Rcpp::Named("orders") = orders
+    );
+}
+
+
+//' WBG Bootstrap COBA Kernel with Grain Size Control
+//'
+//' Same as wbg_bootstrap_coba_kernel_cpp but with explicit grain size.
+//'
+//' @param n Integer, series length.
+//' @param phi Numeric vector, AR coefficients from null model.
+//' @param vara Double, innovation variance from null model.
+//' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+//' @param maxp Integer, maximum AR order for CO test and AR fitting.
+//' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
+//' @param grain_size Integer, minimum iterations per thread (default 1).
+//' @return List with tstats, phi1_values, phi_matrix, orders.
+//' @keywords internal
+//' @noRd
+// [[Rcpp::export]]
+Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(
+    int n,
+    const arma::vec& phi,
+    double vara,
+    const std::vector<uint64_t>& seeds,
+    int maxp = 5,
+    std::string criterion = "aic",
+    std::size_t grain_size = 1
+) {
+    const int nb = seeds.size();
+
+    // Pre-allocate outputs
+    Rcpp::NumericVector tstats(nb);
+    Rcpp::NumericVector phi1_values(nb);
+    Rcpp::NumericMatrix phi_matrix(nb, maxp);
+    Rcpp::IntegerVector orders(nb);
+
+    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, criterion, seeds,
+                                   tstats, phi1_values, phi_matrix, orders);
+    RcppParallel::parallelFor(0, nb, worker, grain_size);
 
     return Rcpp::List::create(
         Rcpp::Named("tstats") = tstats,

@@ -52,10 +52,6 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
     }
     best_ic = ic0;
 
-    // Storage for coefficients at each order (like R's coefs matrix)
-    // coefs[p-1] contains the AR(p) coefficients
-    std::vector<arma::vec> all_coefs(maxp);
-
     // Current variance (recursive formula like R's var1)
     double var_recursive = vara0;
 
@@ -88,18 +84,16 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
             }
         }
 
-        all_coefs[p - 1] = a_curr;
         a_prev = a_curr;
 
-        // Update prediction errors for next iteration
-        arma::vec ef_new = ef;
-        arma::vec eb_new = eb;
-        for (int t = p; t < n; ++t) {
-            ef_new(t) = ef(t) - phii * eb(t - 1);
-            eb_new(t) = eb(t - 1) - phii * ef(t);
+        // Update prediction errors in-place using reverse loop
+        // Going backwards preserves correctness: at step t, we need eb(t-1)
+        // which hasn't been modified yet since we process higher indices first
+        for (int t = n - 1; t >= p; --t) {
+            double old_ef = ef(t);  // Save before overwriting
+            ef(t) = old_ef - phii * eb(t - 1);
+            eb(t) = eb(t - 1) - phii * old_ef;
         }
-        ef = ef_new;
-        eb = eb_new;
 
         // Compute information criterion
         // k = p + 1 (p AR coefficients + 1 for mean/variance)
@@ -177,15 +171,12 @@ void burg_fit_pure(const arma::vec& x, int p, arma::vec& phi_out, double& vara_o
         }
         a_prev = a_curr;
 
-        // Update prediction errors
-        arma::vec ef_new = ef;
-        arma::vec eb_new = eb;
-        for (int t = k; t < n; ++t) {
-            ef_new(t) = ef(t) - phii * eb(t - 1);
-            eb_new(t) = eb(t - 1) - phii * ef(t);
+        // Update prediction errors in-place using reverse loop
+        for (int t = n - 1; t >= k; --t) {
+            double old_ef = ef(t);
+            ef(t) = old_ef - phii * eb(t - 1);
+            eb(t) = eb(t - 1) - phii * old_ef;
         }
-        ef = ef_new;
-        eb = eb_new;
     }
 
     phi_out = a_prev;

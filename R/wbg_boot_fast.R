@@ -63,6 +63,25 @@
 #' AR coefficients from the first stage, where the "median" is selected
 #' based on phi(1) = 1 - sum(phi) as described in the original paper.
 #'
+#' **Performance Tuning:**
+#' For optimal parallel performance, you may want to disable BLAS multi-threading
+#' to avoid nested parallelism (TBB threads + BLAS threads). Set these environment
+#' variables **before loading any packages** that use BLAS:
+#'
+#' ```
+#' Sys.setenv(
+#'   VECLIB_MAXIMUM_THREADS = "1",
+#'   OPENBLAS_NUM_THREADS = "1",
+#'   MKL_NUM_THREADS = "1",
+#'   OMP_NUM_THREADS = "1",
+#'   BLAS_NUM_THREADS = "1"
+#' )
+#' ```
+#'
+#' On macOS with Apple Accelerate, `VECLIB_MAXIMUM_THREADS` is the key variable.
+#' Note: These must be set early in the R session (before BLAS initializes) to
+#' take effect. A session restart may be required after changing them.
+#'
 #' @references
 #' Woodward, W. A., Bottone, S., and Gray, H. L. (1997). "Improved Tests for
 #' Trend in Time Series Data." *Journal of Agricultural, Biological, and
@@ -157,16 +176,23 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     phi_null <- numeric(0)
   }
 
+  # Compute optimal grain size for TBB parallelization
+
+  # Heuristic: ~4 chunks per thread for good load balancing
+  num_threads <- RcppParallel::defaultNumThreads()
+  grain_size <- max(16L, as.integer(nb / (4L * num_threads)))
+
   # Step 3: Bootstrap
   if (bootadj) {
     # === COBA PATH: First bootstrap WITH AR fitting ===
-    boot_result <- wbg_bootstrap_coba_kernel_cpp(
+    boot_result <- wbg_bootstrap_coba_kernel_grain_cpp(
       n = n,
       phi = phi_null,
       vara = vara_null,
       seeds = boot_seeds,
       maxp = maxp,
-      criterion = criterion
+      criterion = criterion,
+      grain_size = grain_size
     )
     boot_tstats <- boot_result$tstats
     phi1_values <- boot_result$phi1_values
@@ -182,14 +208,15 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
       numeric(0)
     }
 
-    # Second bootstrap using median phi (reuse existing fast kernel)
-    boot_tstats_adj <- wbg_bootstrap_kernel_cpp(
+    # Second bootstrap using median phi (with grain size tuning)
+    boot_tstats_adj <- wbg_bootstrap_kernel_grain_cpp(
       n = n,
       phi = median_phi,
       vara = vara_null,
       seeds = boot_seeds_adj,
       maxp = maxp,
-      criterion = criterion
+      criterion = criterion,
+      grain_size = grain_size
     )
 
     # Compute adjustment factor (C = sigma_t_tilde* / sigma_t* from paper)
@@ -198,14 +225,15 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     pvalue_adj <- mean(abs(boot_tstats) >= abs(tco_obs_adj))
 
   } else {
-    # === FAST PATH: No AR fitting in bootstrap ===
-    boot_tstats <- wbg_bootstrap_kernel_cpp(
+    # === FAST PATH: No AR fitting in bootstrap (with grain size tuning) ===
+    boot_tstats <- wbg_bootstrap_kernel_grain_cpp(
       n = n,
       phi = phi_null,
       vara = vara_null,
       seeds = boot_seeds,
       maxp = maxp,
-      criterion = criterion
+      criterion = criterion,
+      grain_size = grain_size
     )
   }
 

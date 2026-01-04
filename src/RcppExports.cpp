@@ -430,6 +430,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// wbg_bootstrap_coba_kernel_grain_cpp
+Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size);
+RcppExport SEXP _tstse_wbg_bootstrap_coba_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
+    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
+    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
+    Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
+    Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_coba_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tstse_ar_transform_cpp", (DL_FUNC) &_tstse_ar_transform_cpp, 2},
@@ -463,6 +480,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_wbg_bootstrap_kernel_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_cpp, 6},
     {"_tstse_wbg_bootstrap_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_grain_cpp, 7},
     {"_tstse_wbg_bootstrap_coba_kernel_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_cpp, 6},
+    {"_tstse_wbg_bootstrap_coba_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_grain_cpp, 7},
     {NULL, NULL, 0}
 };
 
