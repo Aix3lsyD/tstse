@@ -38,11 +38,19 @@ Suggests:
     waveslim,
     zoo
 Config/testthat/edition: 3
-LinkingTo: 
-    Rcpp
+LinkingTo:
+    Rcpp,
+    RcppArmadillo,
+    RcppParallel,
+    dqrng,
+    BH,
+    sitmo
 Imports:
     Rcpp,
-    rlang
+    RcppParallel,
+    rlang,
+    future,
+    future.apply
 URL: https://github.com/Aix3lsyD/tstse
 BugReports: https://github.com/Aix3lsyD/tstse/issues
 Author: Wayne Woodward [aut],

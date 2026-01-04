@@ -1,0 +1,10 @@
+## Makevars for tstse package
+## Requires GCC (set in ~/.R/Makevars) for OpenMP + RcppParallel (TBB)
+
+CXX_STD = CXX17
+
+## Compile flags: Armadillo + OpenMP (GCC native via libgomp)
+PKG_CXXFLAGS = -DARMA_USE_CURRENT -fopenmp
+
+## Link flags: OpenMP (libgomp) + RcppParallel/TBB
+PKG_LIBS = -fopenmp $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::RcppParallelLibs()")

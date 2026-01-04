@@ -7,8 +7,9 @@
 #' @param type Character, criterion to use: "aic" (default), "aicc", or "bic".
 #' @param method Character, estimation method: "mle" (default), "burg", or "yw".
 #' @param cores Integer, number of cores for parallel processing.
-#'   Default NULL uses \code{getOption("tstse.cores", 1)}.
-#'   Set to 0 to use all available cores.
+#'   Default NULL uses sequential processing (cores = 1) to prevent nested
+#'   parallelization when called from within parallel contexts.
+#'   Set explicitly to use parallel processing.
 #'
 #' @return A list with components:
 #'   \item{type}{Criterion used}
@@ -28,7 +29,7 @@
 #' aic_ar(x, p = 1:5)
 #'
 #' \donttest{
-#' # Parallel (uses multiple cores)
+#' # Parallel (uses multiple cores) - must be explicit
 #' aic_ar(x, p = 1:10, cores = 2)
 #' }
 aic_ar <- function(x,
@@ -47,7 +48,21 @@ aic_ar <- function(x,
 
   type <- match.arg(type)
   method <- match.arg(method)
-  cores <- get_cores(cores)
+
+  # =========================================================================
+  # DEFENSIVE DEFAULT: When cores is NULL, default to sequential (1L).
+  # This prevents nested parallelization when aic_ar is called from within
+
+  # parallel workers (e.g., inside wbg_boot's bootstrap loop).
+  #
+  # Users who want parallel aic_ar at the top level should explicitly set
+  # cores = N or cores = 0.
+  # =========================================================================
+  if (is.null(cores)) {
+    cores <- 1L
+  } else {
+    cores <- get_cores(cores)
+  }
 
   n <- length(x)
   xbar <- mean(x)

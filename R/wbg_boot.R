@@ -64,13 +64,13 @@
 wbg_boot <- function(x, nb = 399L, maxp = 5L,
                      method = c("burg", "mle", "yw"),
                      type = c("aic", "aicc", "bic"),
-                     cores = NULL, seed = NULL) {
+                     cores = 1L, seed = NULL) {
 
   method <- match.arg(method)
   type <- match.arg(type)
 
   # Input validation
- if (!is.numeric(x) || length(x) == 0) {
+  if (!is.numeric(x) || length(x) == 0) {
     stop("`x` must be a non-empty numeric vector", call. = FALSE)
   }
   if (!is.numeric(nb) || length(nb) != 1 || nb < 1) {
@@ -90,12 +90,12 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     set.seed(seed)
   }
 
-  # Step 1: Fit Cochrane-Orcutt on observed data
+  # Step 1: Fit Cochrane-Orcutt on observed data (main thread - OK to use defaults)
   w <- co(x, maxp = maxp, method = method, type = type)
   tco_obs <- w$tco
 
   # Step 2: Fit AR model under null hypothesis (no trend)
-  # Use aic_burg for consistency with original tswge
+  # These run in main thread before parallel loop - safe
   if (method == "burg") {
     x_aic <- aic_burg(x, p = seq_len(maxp))
   } else {
@@ -108,6 +108,9 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
   # Generate seeds for reproducibility with parallel processing
   boot_seeds <- if (!is.null(seed)) sample.int(.Machine$integer.max, nb) else NULL
 
+  # NOTE: boot_fn runs inside parallel workers.
+  # co() internally uses cores = 1L, so no nested parallelization occurs.
+  # The pmap() function also detects if it's inside a worker and forces sequential.
   boot_fn <- function(i) {
     # Set seed for this replicate if provided
     if (!is.null(boot_seeds)) {
@@ -118,6 +121,7 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     xb <- gen_arma(n = n, phi = phi_null, theta = 0, plot = FALSE)
 
     # Fit CO and get t-statistic
+    # co() uses cores = 1L internally - safe for nested calls
     wb <- co(xb, maxp = maxp, method = method, type = type)
     abs(wb$tco)
   }

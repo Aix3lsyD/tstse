@@ -159,6 +159,7 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
   obs_stat <- stat_fn(x)
 
   # Fit AR model under H0: no trend, stationary AR
+  # These run in main thread - safe to use defaults
   if (verbose) message("Fitting null model (", ar_method, ")...")
 
   if (ar_method == "burg") {
@@ -179,6 +180,12 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
   # --- First Bootstrap ---
   if (verbose) message("Running bootstrap (", nb, " replicates)...")
 
+  # ===========================================================================
+  # CRITICAL FIX: boot_fn runs inside parallel workers.
+  # All AR fitting calls MUST use cores = 1L to prevent nested parallelization.
+  # The pmap() function also detects if it's inside a worker and forces
+  # sequential, but explicit cores = 1L is clearer and more defensive.
+  # ===========================================================================
   boot_fn <- function(i) {
     # Generate AR series under null using fast generator
     xb <- gen_ar_fast(n, phi = ar_phi, seed = boot_seeds[i])
@@ -186,6 +193,8 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
 
     if (bootadj) {
       # Fit AR to bootstrap sample for COBA adjustment
+      # NOTE: aic_burg() defaults to cores = 1L (safe for nested calls)
+      #       aic_ar_mle() is already fully sequential (no cores param)
       ar_boot <- tryCatch({
         if (ar_method == "burg") {
           aic_burg(xb, p = seq_len(p_max), type = criterion)
@@ -240,6 +249,7 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
     median_idx <- which.min(abs(boot_phi1 - median(boot_phi1)))
     median_phi <- boot_phi_list[[median_idx]]
 
+    # Second stage bootstrap function - no AR fitting needed here
     boot_fn_adj <- function(i) {
       xb <- gen_ar_fast(n, phi = median_phi, seed = boot_seeds_adj[i])
       stat_fn(xb)

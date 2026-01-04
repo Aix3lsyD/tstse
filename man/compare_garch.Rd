@@ -73,8 +73,8 @@ the trivial (0,0) case) and computes:
 \item n_sig/n_coef - count of significant coefficients
 }
 
-Parallel processing uses \code{mclapply} on Unix/Mac and \code{parLapply}
-on Windows. Set \code{parallel = FALSE} to disable.
+Parallel processing uses the \code{future} package with \code{multisession}
+backend (socket-based workers). Set \code{parallel = FALSE} to disable.
 }
 \section{Functions}{
 \itemize{

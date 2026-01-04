@@ -38,8 +38,8 @@
 #'   \item n_sig/n_coef - count of significant coefficients
 #' }
 #'
-#' Parallel processing uses \code{mclapply} on Unix/Mac and \code{parLapply}
-#' on Windows. Set \code{parallel = FALSE} to disable.
+#' Parallel processing uses the \code{future} package with \code{multisession}
+#' backend (socket-based workers). Set \code{parallel = FALSE} to disable.
 #'
 #' @seealso \code{\link{table_garch_gt}}, \code{\link{table_garch_cli}} for
 #'   display functions.

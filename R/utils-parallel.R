@@ -27,100 +27,139 @@ get_cores <- function(cores = NULL) {
 }
 
 
-#' Parallel-aware map function
+#' Check if currently running inside a future worker
 #'
-#' Uses mclapply on Unix, parLapply on Windows, or lapply if cores = 1.
-#' Includes safeguards against nested parallelization and BLAS thread explosion.
+#' @return TRUE if inside a worker, FALSE otherwise
+#' @noRd
+is_inside_worker <- function() {
+  # Method 1: Check for future's worker flag
+  if (!is.null(future::futureSessionInfo()$worker)) {
+    return(TRUE)
+  }
+
+
+  # Method 2: Check if we're in a worker via the plan
+
+  # Workers have a "future.nbrOfWorkers" that's set to 1
+  inherits(future::plan(), "uniprocess") &&
+    isTRUE(getOption("future.fork.enable", FALSE) == FALSE)
+
+  FALSE
+}
+
+
+#' Parallel map using future
+#'
+#' Uses future.apply::future_lapply. Backend selection:
+#' - If tstse is installed: uses multisession (socket-based, safe)
+#' - If using devtools::load_all(): uses multicore on Unix (fork-based)
+#'
+#' Workers are kept alive between calls to avoid spawn/teardown overhead.
+#' Call `tstse_parallel_stop()` to explicitly shut down workers.
 #'
 #' @param X Vector or list to iterate over
 #' @param FUN Function to apply
-#' @param cores Number of cores to use
+#' @param cores Number of cores to use (1 = sequential)
 #' @return List of results
 #' @noRd
 pmap <- function(X, FUN, cores = 1L) {
 
   verbose <- isTRUE(getOption("tstse.parallel_verbose", FALSE))
 
-  # Prevent nested parallelization (e.g., bootstrap calling aic_ar)
-  if (isTRUE(getOption("tstse.parallel_active"))) {
-    if (verbose) message("[tstse] Nesting guard: forcing sequential execution")
-    cores <- 1L
-  }
-
+  # Sequential execution
   if (cores <= 1L) {
     return(lapply(X, FUN))
   }
 
-  # Set flag before spawning workers to prevent nesting
-  old_opt <- getOption("tstse.parallel_active")
-  options(tstse.parallel_active = TRUE)
-  on.exit(options(tstse.parallel_active = old_opt), add = TRUE)
+  # =========================================================================
+  # CRITICAL: Prevent nested parallelization
 
-  if (.Platform$OS.type == "unix") {
-    # Control BLAS threading to prevent thread explosion in forked children
-    # On macOS, vecLib (Accelerate) is multi-threaded by default
-    blas_threads <- as.integer(getOption("tstse.blas_threads", 1L))
-
-    # Prefer RhpcBLASctl (works post-initialization, unlike env vars)
-    old_blas_threads <- NULL
-    if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
-      old_blas_threads <- RhpcBLASctl::blas_get_num_procs()
-      RhpcBLASctl::blas_set_num_threads(blas_threads)
-      on.exit(RhpcBLASctl::blas_set_num_threads(old_blas_threads), add = TRUE)
-      if (verbose) {
-        message("[tstse] Set BLAS threads to ", blas_threads,
-                " via RhpcBLASctl (was ", old_blas_threads, ")")
-      }
-    } else {
-      # Fallback to environment variables (only affects BLAS initialization,
-      # less effective if BLAS already initialized, but doesn't hurt)
-      blas_vars <- c("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
-                     "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS")
-      old_env <- Sys.getenv(blas_vars, unset = NA)
-
-      Sys.setenv(
-        OPENBLAS_NUM_THREADS = blas_threads,
-        OMP_NUM_THREADS = blas_threads,
-        VECLIB_MAXIMUM_THREADS = blas_threads,
-        MKL_NUM_THREADS = blas_threads
-      )
-      on.exit({
-        for (i in seq_along(blas_vars)) {
-          if (is.na(old_env[i])) {
-            Sys.unsetenv(blas_vars[i])
-          } else {
-            do.call(Sys.setenv, stats::setNames(list(old_env[i]), blas_vars[i]))
-          }
-        }
-      }, add = TRUE)
-
-      if (verbose) {
-        message("[tstse] Set BLAS env vars to ", blas_threads,
-                " (RhpcBLASctl not available - install for better thread control)")
-      }
-    }
-
+  # If we're already inside a future worker, force sequential execution.
+  # This prevents the 14 workers x 14 workers = 196 process explosion.
+  # =========================================================================
+  if (!is.null(future::futureSessionInfo()$worker)) {
     if (verbose) {
-      message("[tstse] Starting mclapply with ", cores, " cores")
+      message("[tstse] Inside worker process - forcing sequential execution")
     }
-
-    # Unix: use mclapply (fork-based)
-    parallel::mclapply(X, FUN, mc.cores = cores)
-  } else {
-    # Windows: use parLapply (socket-based, requires cluster setup)
-    if (verbose) {
-      message("[tstse] Starting parLapply with ", cores, " workers")
-    }
-
-    cl <- parallel::makeCluster(cores)
-    on.exit(parallel::stopCluster(cl), add = TRUE)
-
-    # Export necessary functions to workers
-    parallel::clusterExport(cl, varlist = c("backcast", "est_ar", "est_arma"),
-                            envir = asNamespace("tstse"))
-
-    parallel::parLapply(cl, X, FUN)
+    return(lapply(X, FUN))
   }
+
+  # Choose backend:
+  #   options(tstse.parallel_backend = "multisession")  # socket-based, safe (default)
+  #   options(tstse.parallel_backend = "multicore")     # fork-based, for devtools::load_all()
+  backend <- getOption("tstse.parallel_backend", "multisession")
+
+  # Multicore only works on Unix
+  if (backend == "multicore" && .Platform$OS.type != "unix") {
+    warning("[tstse] multicore backend not available on Windows, using multisession",
+            call. = FALSE)
+    backend <- "multisession"
+  }
+
+  # =========================================================================
+  # ROBUST PLAN REUSE: Check worker count instead of class inheritance
+  # The class hierarchy check (inherits(plan, "multisession")) is unreliable
+  # because the plan object's class varies. Use nbrOfWorkers() instead.
+  # =========================================================================
+  current_workers <- future::nbrOfWorkers()
+  need_new_plan <- current_workers < cores
+
+  if (!need_new_plan) {
+    if (verbose) {
+      message("[tstse] Reusing existing plan (", current_workers, " workers)")
+    }
+  } else {
+    if (verbose) {
+      message("[tstse] Setting up ", backend, " plan with ", cores, " workers")
+    }
+
+    if (backend == "multisession") {
+      future::plan(future::multisession, workers = cores)
+    } else {
+      future::plan(future::multicore, workers = cores)
+    }
+
+    # Mark that tstse set up this plan (for cleanup tracking)
+    options(tstse.parallel_active = TRUE)
+  }
+
+  # Run the parallel operation
+  # Use explicit chunking: one chunk per worker for minimal IPC overhead
+  chunk_size <- max(1L, ceiling(length(X) / cores))
+
+  if (backend == "multisession") {
+    future.apply::future_lapply(X, FUN,
+                                future.seed = TRUE,
+                                future.chunk.size = chunk_size,
+                                future.packages = "tstse")
+  } else {
+    future.apply::future_lapply(X, FUN,
+                                future.seed = TRUE,
+                                future.chunk.size = chunk_size)
+  }
+}
+
+
+#' Stop parallel workers
+#'
+#' Shuts down any parallel workers that were started by tstse.
+#' Call this when you're done with parallel processing to free resources.
+#'
+#' @return Invisible NULL
+#' @export
+#' @examples
+#' \dontrun{
+#' options(tstse.cores = 4)
+#' result <- wbg_boot(x, nb = 100)  # Uses parallel workers
+#' tstse_parallel_stop()            # Clean up workers
+#' }
+tstse_parallel_stop <- function() {
+  if (isTRUE(getOption("tstse.parallel_active", FALSE))) {
+    future::plan(future::sequential)
+    options(tstse.parallel_active = FALSE)
+    message("[tstse] Parallel workers stopped")
+  }
+  invisible(NULL)
 }
 
 
