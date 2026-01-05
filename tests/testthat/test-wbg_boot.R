@@ -142,3 +142,52 @@ test_that("wbg_boot matches tswge for basic case", {
   # p-values should be similar (not exact due to seed handling differences)
   expect_true(abs(result_tstse$pvalue - result_tswge$pv) < 0.15)
 })
+
+
+# =============================================================================
+# Time-transform optimization tests
+# =============================================================================
+
+test_that("C++ CO t-statistic matches R implementation for various AR orders", {
+  set.seed(42)
+
+  # Test cases covering various AR structures
+  test_cases <- list(
+    list(phi = 0.7, n = 100),                    # AR(1) positive
+    list(phi = c(0.5, -0.3), n = 100),           # AR(2)
+    list(phi = c(0.3, 0.2, -0.1), n = 150),      # AR(3)
+    list(phi = c(0.95), n = 50),                 # Near unit root
+    list(phi = c(-0.7), n = 100)                 # Negative phi, makes phi(1) > 1
+  )
+
+  for (tc in test_cases) {
+    x <- arima.sim(list(ar = tc$phi), n = tc$n) + 0.05 * seq_len(tc$n)
+
+    # C++ implementation (uses optimized time transform)
+    t_cpp <- co_tstat_cpp(x, maxp = 5, criterion = "aic")
+
+    # R implementation
+    t_r <- co(x, maxp = 5, method = "burg", type = "aic")$tco
+
+    # Should match within floating-point precision
+    expect_equal(t_cpp, t_r, tolerance = 1e-10,
+      info = sprintf("AR(%d) with phi=%s", length(tc$phi),
+                     paste(round(tc$phi, 2), collapse = ",")))
+  }
+})
+
+test_that("CO t-statistic is scale and shift invariant",
+{
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.7), n = 100) + 0.05 * seq_len(100)
+
+  t_original <- co_tstat_cpp(x, maxp = 5, criterion = "aic")
+
+  # Scale invariance: 2*x should give same t-stat
+  t_scaled <- co_tstat_cpp(2 * x, maxp = 5, criterion = "aic")
+  expect_equal(t_original, t_scaled, tolerance = 1e-10)
+
+  # Shift invariance: x + 100 should give same t-stat
+  t_shifted <- co_tstat_cpp(x + 100, maxp = 5, criterion = "aic")
+  expect_equal(t_original, t_shifted, tolerance = 1e-10)
+})

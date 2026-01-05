@@ -190,6 +190,121 @@ void burg_fit_pure(const arma::vec& x, int p, arma::vec& phi_out, double& vara_o
 }
 
 
+// =============================================================================
+// Workspace-aware Burg with AIC/BIC selection (ZERO allocations)
+// Uses pre-allocated workspace vectors for thread-local reuse
+// =============================================================================
+BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
+                               CriterionType ic_type,
+                               CoBootstrapWorkspace& ws) {
+    const int n = x.n_elem;
+
+    if (maxp >= n - 1) {
+        maxp = n - 2;
+    }
+    if (maxp < 1) {
+        maxp = 1;
+    }
+
+    // Center the series INTO workspace (no allocation!)
+    const double x_mean = arma::mean(x);
+    for (int i = 0; i < n; ++i) {
+        ws.xc[i] = x[i] - x_mean;
+        ws.ef[i] = ws.xc[i];
+        ws.eb[i] = ws.xc[i];
+    }
+
+    // AR(0) variance
+    double vara0 = arma::dot(ws.xc, ws.xc) / n;
+
+    // Track best model
+    int best_p = 0;
+    double best_ic = std::numeric_limits<double>::infinity();
+    arma::vec best_phi;
+    double best_vara = vara0;
+
+    // IC for AR(0)
+    double ic0;
+    if (ic_type == IC_AIC) {
+        ic0 = n * std::log(vara0) + 2.0 * 1;
+    } else if (ic_type == IC_AICC) {
+        ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+    } else { // IC_BIC
+        ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
+    }
+    best_ic = ic0;
+
+    // Current variance (recursive formula like R's var1)
+    double var_recursive = vara0;
+
+    // Single pass through all orders
+    for (int p = 1; p <= maxp; ++p) {
+        // Compute reflection coefficient
+        double num = 0.0;
+        double den = 0.0;
+
+        for (int t = p; t < n; ++t) {
+            num += ws.ef[t] * ws.eb[t - 1];
+            den += ws.ef[t] * ws.ef[t] + ws.eb[t - 1] * ws.eb[t - 1];
+        }
+
+        double phii = (den > 1e-15) ? 2.0 * num / den : 0.0;
+
+        // Update variance using recursive formula
+        var_recursive = var_recursive * (1.0 - phii * phii);
+
+        // Levinson recursion using workspace vectors (no allocation!)
+        ws.a_curr[p - 1] = phii;
+
+        if (p > 1) {
+            for (int j = 0; j < p - 1; ++j) {
+                ws.a_curr[j] = ws.a_prev[j] - phii * ws.a_prev[p - 2 - j];
+            }
+        }
+
+        // Swap current to previous (copy only p elements)
+        for (int j = 0; j < p; ++j) {
+            ws.a_prev[j] = ws.a_curr[j];
+        }
+
+        // Update prediction errors in-place using reverse loop
+        for (int t = n - 1; t >= p; --t) {
+            double old_ef = ws.ef[t];
+            ws.ef[t] = old_ef - phii * ws.eb[t - 1];
+            ws.eb[t] = ws.eb[t - 1] - phii * old_ef;
+        }
+
+        // Compute information criterion (enum comparison, no string!)
+        int k = p + 1;
+        double ic;
+
+        if (var_recursive <= 0) {
+            ic = std::numeric_limits<double>::infinity();
+        } else if (ic_type == IC_AIC) {
+            ic = n * std::log(var_recursive) + 2.0 * k;
+        } else if (ic_type == IC_AICC) {
+            if (n - k - 1 > 0) {
+                ic = n * std::log(var_recursive) + 2.0 * k * n / (n - k - 1);
+            } else {
+                ic = std::numeric_limits<double>::infinity();
+            }
+        } else { // IC_BIC
+            ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
+        }
+
+        if (ic < best_ic) {
+            best_ic = ic;
+            best_p = p;
+            // Only allocation: copy best phi (unavoidable - need to return it)
+            best_phi = ws.a_curr.head(p);
+            best_vara = var_recursive;
+        }
+    }
+
+    return BurgResult(best_phi, best_vara, best_p, best_ic);
+}
+
+
 // Rcpp export wrapper (for R interface)
 // [[Rcpp::export]]
 Rcpp::List burg_aic_select_pure_export(const arma::vec& x, int maxp = 5,

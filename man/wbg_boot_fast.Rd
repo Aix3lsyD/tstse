@@ -83,6 +83,24 @@ bias. This provides better small-sample significance levels but
 approximately doubles computation time. The adjustment uses the median
 AR coefficients from the first stage, where the "median" is selected
 based on phi(1) = 1 - sum(phi) as described in the original paper.
+
+\strong{Performance Tuning:}
+For optimal parallel performance, you may want to disable BLAS multi-threading
+to avoid nested parallelism (TBB threads + BLAS threads). Set these environment
+variables \strong{before loading any packages} that use BLAS:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{Sys.setenv(
+  VECLIB_MAXIMUM_THREADS = "1",
+  OPENBLAS_NUM_THREADS = "1",
+  MKL_NUM_THREADS = "1",
+  OMP_NUM_THREADS = "1",
+  BLAS_NUM_THREADS = "1"
+)
+}\if{html}{\out{</div>}}
+
+On macOS with Apple Accelerate, \code{VECLIB_MAXIMUM_THREADS} is the key variable.
+Note: These must be set early in the R session (before BLAS initializes) to
+take effect. A session restart may be required after changing them.
 }
 \examples{
 \donttest{

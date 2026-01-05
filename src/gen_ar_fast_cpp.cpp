@@ -7,6 +7,12 @@
 #include <dqrng_distribution.h>
 #include <xoshiro.h>
 #include <cmath>
+#include <limits>
+
+// M_PI fallback for portability (not defined on MSVC without _USE_MATH_DEFINES)
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using namespace Rcpp;
 

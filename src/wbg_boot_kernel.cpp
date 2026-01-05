@@ -15,9 +15,15 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion);
 
+// Forward declarations - workspace-aware functions (ZERO allocations)
+double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
+                   CoBootstrapWorkspace& ws);
+BurgResult burg_aic_select_ws(const arma::vec& x, int maxp, CriterionType ic_type,
+                               CoBootstrapWorkspace& ws);
+
 
 // =============================================================================
-// TBB Worker for WBG Bootstrap
+// TBB Worker for WBG Bootstrap (Workspace-optimized)
 // =============================================================================
 
 struct WBGBootstrapWorker : public RcppParallel::Worker {
@@ -26,7 +32,7 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
     const arma::vec phi;
     const double vara;
     const int maxp;
-    const std::string criterion;
+    const CriterionType ic_type;  // Pre-converted enum (no string comparison in hot path)
     const std::vector<uint64_t>& seeds;
 
     // Output (thread-safe write via RVector)
@@ -34,23 +40,25 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
 
     // Constructor
     WBGBootstrapWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
-                       const std::string& criterion_,
+                       CriterionType ic_type_,
                        const std::vector<uint64_t>& seeds_,
                        Rcpp::NumericVector results_)
-        : n(n_), phi(phi_), vara(vara_), maxp(maxp_), criterion(criterion_),
+        : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
           seeds(seeds_), results(results_) {}
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
-        // Pre-allocate buffer for this thread chunk (reused across iterations)
-        arma::vec x_buf(n);
+        // Allocate workspace ONCE for this thread chunk
+        // All iterations in this chunk reuse the same buffers
+        CoBootstrapWorkspace ws;
+        ws.resize(n, maxp);
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series directly into buffer (no copy)
-            gen_ar_into(x_buf, phi, vara, seeds[b]);
+            // Generate AR series directly into workspace buffer (no copy)
+            gen_ar_into(ws.x_buf, phi, vara, seeds[b]);
 
-            // Compute CO t-statistic for this bootstrap sample
-            results[b] = co_tstat_pure(x_buf, maxp, criterion);
+            // Compute CO t-statistic using workspace (ZERO allocations)
+            results[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
         }
     }
 };
@@ -87,8 +95,11 @@ Rcpp::NumericVector wbg_bootstrap_kernel_cpp(
     const int nb = seeds.size();
     Rcpp::NumericVector results(nb);
 
+    // Convert criterion string to enum ONCE (not in hot path)
+    CriterionType ic_type = criterion_from_string(criterion);
+
     // Create worker and run in parallel
-    WBGBootstrapWorker worker(n, phi, vara, maxp, criterion, seeds, results);
+    WBGBootstrapWorker worker(n, phi, vara, maxp, ic_type, seeds, results);
     RcppParallel::parallelFor(0, nb, worker);
 
     return results;
@@ -123,7 +134,10 @@ Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(
     const int nb = seeds.size();
     Rcpp::NumericVector results(nb);
 
-    WBGBootstrapWorker worker(n, phi, vara, maxp, criterion, seeds, results);
+    // Convert criterion string to enum ONCE
+    CriterionType ic_type = criterion_from_string(criterion);
+
+    WBGBootstrapWorker worker(n, phi, vara, maxp, ic_type, seeds, results);
     RcppParallel::parallelFor(0, nb, worker, grain_size);
 
     return results;
@@ -131,7 +145,7 @@ Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(
 
 
 // =============================================================================
-// TBB Worker for COBA Bootstrap (with AR fitting)
+// TBB Worker for COBA Bootstrap (with AR fitting) - Workspace-optimized
 // =============================================================================
 
 struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
@@ -140,7 +154,7 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
     const arma::vec phi;
     const double vara;
     const int maxp;
-    const std::string criterion;
+    const CriterionType ic_type;  // Pre-converted enum
     const std::vector<uint64_t>& seeds;
 
     // Pre-allocated output (thread-safe writes to separate indices)
@@ -151,30 +165,32 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 
     // Constructor
     WBGBootstrapCOBAWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
-                           const std::string& criterion_,
+                           CriterionType ic_type_,
                            const std::vector<uint64_t>& seeds_,
                            Rcpp::NumericVector tstats_,
                            Rcpp::NumericVector phi1_values_,
                            Rcpp::NumericMatrix phi_matrix_,
                            Rcpp::IntegerVector orders_)
-        : n(n_), phi(phi_), vara(vara_), maxp(maxp_), criterion(criterion_),
+        : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
           seeds(seeds_), tstats(tstats_), phi1_values(phi1_values_),
           phi_matrix(phi_matrix_), orders(orders_) {}
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
-        // Pre-allocate buffer for this thread chunk (reused across iterations)
-        arma::vec x_buf(n);
+        // Allocate workspace ONCE for this thread chunk
+        CoBootstrapWorkspace ws;
+        ws.resize(n, maxp);
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series directly into buffer (no copy)
-            gen_ar_into(x_buf, phi, vara, seeds[b]);
+            // Generate AR series directly into workspace buffer (no copy)
+            gen_ar_into(ws.x_buf, phi, vara, seeds[b]);
 
-            // Compute CO t-statistic for this bootstrap sample
-            tstats[b] = co_tstat_pure(x_buf, maxp, criterion);
+            // Compute CO t-statistic using workspace (ZERO allocations)
+            tstats[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
 
-            // Fit AR model to bootstrap sample (thread-safe pure C++)
-            BurgResult ar_fit = burg_aic_select_pure(x_buf, maxp, criterion);
+            // Fit AR model to bootstrap sample using workspace
+            // Note: This reuses ws.xc, ws.ef, ws.eb, ws.a_curr, ws.a_prev
+            BurgResult ar_fit = burg_aic_select_ws(ws.x_buf, maxp, ic_type, ws);
 
             // Store results
             orders[b] = ar_fit.p;
@@ -229,8 +245,11 @@ Rcpp::List wbg_bootstrap_coba_kernel_cpp(
     Rcpp::NumericMatrix phi_matrix(nb, maxp);  // Zero-initialized
     Rcpp::IntegerVector orders(nb);
 
+    // Convert criterion string to enum ONCE
+    CriterionType ic_type = criterion_from_string(criterion);
+
     // Create worker and run in parallel
-    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, criterion, seeds,
+    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, ic_type, seeds,
                                    tstats, phi1_values, phi_matrix, orders);
     RcppParallel::parallelFor(0, nb, worker);
 
@@ -275,7 +294,10 @@ Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(
     Rcpp::NumericMatrix phi_matrix(nb, maxp);
     Rcpp::IntegerVector orders(nb);
 
-    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, criterion, seeds,
+    // Convert criterion string to enum ONCE
+    CriterionType ic_type = criterion_from_string(criterion);
+
+    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, ic_type, seeds,
                                    tstats, phi1_values, phi_matrix, orders);
     RcppParallel::parallelFor(0, nb, worker, grain_size);
 

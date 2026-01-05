@@ -140,6 +140,9 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   if (!is.numeric(maxp) || length(maxp) != 1 || maxp < 1) {
     stop("`maxp` must be a positive integer", call. = FALSE)
   }
+  if (maxp > 20L) {
+    stop("`maxp` must be <= 20 (C++ buffer limit)", call. = FALSE)
+  }
 
   x <- as.numeric(x)
   nb <- as.integer(nb)
@@ -164,12 +167,12 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   # Step 1: Compute observed CO t-statistic (C++)
   tco_obs <- co_tstat_cpp(x, maxp, criterion)
 
-  # Step 2: Fit null model (no trend) using R's ar.burg
-  # We use R's ar.burg here because it's well-tested and only runs once
-  fit <- ar.burg(x, order.max = maxp, aic = TRUE)
-  p_null <- fit$order
-  phi_null <- as.numeric(fit$ar)
-  vara_null <- fit$var.pred
+  # Step 2: Fit null model (no trend) using C++ Burg with user's criterion
+  # Using burg_aic_select_cpp ensures the same IC is used throughout
+  fit <- burg_aic_select_cpp(x, maxp, criterion)
+  p_null <- fit$p
+  phi_null <- as.numeric(fit$phi)
+  vara_null <- fit$vara
 
   # Handle AR(0) case
   if (p_null == 0) {

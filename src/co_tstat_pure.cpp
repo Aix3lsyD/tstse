@@ -9,6 +9,11 @@
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
                                  const std::string& criterion);
 
+// Forward declaration of workspace-aware Burg function
+BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
+                               CriterionType ic_type,
+                               CoBootstrapWorkspace& ws);
+
 // Internal: OLS detrend (pure C++) - allocation-optimized version
 // Uses closed-form formulas for t = 1, 2, ..., n to avoid temporary vectors
 static arma::vec ols_detrend_internal(const arma::vec& x) {
@@ -36,6 +41,34 @@ static arma::vec ols_detrend_internal(const arma::vec& x) {
         resid[i] = x[i] - a_hat - b_hat * (i + 1);
     }
     return resid;
+}
+
+
+// Workspace-aware OLS detrend (ZERO allocations)
+// Writes detrended residuals directly into workspace.resid
+static void ols_detrend_ws(const arma::vec& x, CoBootstrapWorkspace& ws) {
+    const int n = x.n_elem;
+
+    // Closed-form formulas for t = 1, 2, ..., n
+    const double t_mean = (n + 1.0) / 2.0;
+    const double ss_t = n * (static_cast<double>(n) * n - 1.0) / 12.0;
+
+    // Single pass: compute sum(x) and sum(t*x)
+    double sum_x = 0.0, sum_tx = 0.0;
+    for (int i = 0; i < n; ++i) {
+        sum_x += x[i];
+        sum_tx += (i + 1) * x[i];  // 1-based index
+    }
+
+    const double x_mean = sum_x / n;
+    const double sxy = sum_tx - n * x_mean * t_mean;
+    const double b_hat = sxy / ss_t;
+    const double a_hat = x_mean - b_hat * t_mean;
+
+    // Write directly to workspace (no allocation!)
+    for (int i = 0; i < n; ++i) {
+        ws.resid[i] = x[i] - a_hat - b_hat * (i + 1);
+    }
 }
 
 
@@ -127,6 +160,16 @@ static double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
 
     if (m < 3) return 0.0;
 
+    // Precompute affine coefficients for time transform: t* = phi_at_1 * t + time_const
+    // Mathematical identity: t* = t - Σφⱼ(t-j) = t(1-Σφⱼ) + Σ(j·φⱼ) = φ(1)·t + C
+    // This reduces O(p) per observation to O(1)
+    double phi_at_1 = 1.0;    // φ(1) = 1 - Σφⱼ
+    double time_const = 0.0;  // C = Σ(j·φⱼ)
+    for (int j = 0; j < p; ++j) {
+        phi_at_1 -= phi[j];
+        time_const += (j + 1) * phi[j];
+    }
+
     // Single pass: accumulate all sums needed for regression
     double sum_y = 0.0, sum_t = 0.0;
     double sum_yt = 0.0, sum_y2 = 0.0, sum_t2 = 0.0;
@@ -139,12 +182,17 @@ static double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
             y_val -= phi[j] * x[t - j - 1];
         }
 
-        // Compute CO time transform on the fly (no vector storage)
+        // OPTIMIZED O(1) time transform using precomputed affine coefficients
+        // t* = φ(1)·t + C where φ(1) = 1-Σφⱼ, C = Σ(j·φⱼ)
         const int t_1based = t + 1;
-        double t_val = static_cast<double>(t_1based);
-        for (int j = 0; j < p; ++j) {
-            t_val -= phi[j] * (t_1based - (j + 1));
-        }
+        double t_val = phi_at_1 * t_1based + time_const;
+
+        // // ORIGINAL O(p) time transform - kept for reference
+        // const int t_1based = t + 1;
+        // double t_val = static_cast<double>(t_1based);
+        // for (int j = 0; j < p; ++j) {
+        //     t_val -= phi[j] * (t_1based - (j + 1));
+        // }
 
         // Accumulate sums
         sum_y += y_val;
@@ -197,6 +245,29 @@ double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion)
 
     // Steps 3-5: Fused single-pass (ZERO allocations)
     // Computes AR transform, time transform, and OLS t-stat all on-the-fly
+    return co_tstat_fused(x, ar_fit.phi);
+}
+
+
+// =============================================================================
+// Workspace-aware CO t-statistic (ZERO allocations in hot path)
+// Uses pre-allocated workspace for all temporary vectors
+// =============================================================================
+double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
+                   CoBootstrapWorkspace& ws) {
+    const int n = x.n_elem;
+
+    if (n < maxp + 3) {
+        return 0.0;  // Series too short
+    }
+
+    // Step 1: OLS detrend into workspace.resid (ZERO allocations)
+    ols_detrend_ws(x, ws);
+
+    // Step 2: Burg AR selection using workspace (ZERO allocations except best_phi copy)
+    BurgResult ar_fit = burg_aic_select_ws(ws.resid, maxp, ic_type, ws);
+
+    // Steps 3-5: Fused single-pass (already ZERO allocations)
     return co_tstat_fused(x, ar_fit.phi);
 }
 
