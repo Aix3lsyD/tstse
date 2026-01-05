@@ -1,5 +1,18 @@
-// gen_ar_fast_cpp.cpp - Fast AR generation with thread-safe RNG
-// Part of wbg_boot_fast optimization
+// =============================================================================
+// FILE: kernel_gen_ar.cpp
+// CATEGORY: HOT PATH - Thread-safe AR generation with dqrng
+// THREAD-SAFE: YES (each call creates local xoshiro256+ RNG)
+//
+// Generates AR processes for parallel bootstrap. Uses dqrng's xoshiro256+
+// PRNG which is faster than R's Mersenne Twister and fully thread-safe.
+//
+// Key functions:
+//   - gen_ar_into(): Zero-copy generation into workspace buffer
+//   - gen_ar_seeded_cpp(): Seeded variant for reproducibility
+//   - gen_ar_cpp(): Primary API for R users
+//
+// Called by: kernel_wbg_boot.cpp (WBGBootstrapWorker)
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo, dqrng, BH)]]
 
 #include <RcppArmadillo.h>
@@ -8,6 +21,8 @@
 #include <xoshiro.h>
 #include <cmath>
 #include <limits>
+#include <algorithm>  // for std::max with initializer_list
+#include <random>     // for std::uniform_real_distribution
 
 // M_PI fallback for portability (not defined on MSVC without _USE_MATH_DEFINES)
 #ifndef M_PI
@@ -16,14 +31,8 @@
 
 using namespace Rcpp;
 
-//' Calculate Adaptive Burn-in for AR Process
-//'
-//' @param phi Numeric vector, AR coefficients.
-//' @param n Integer, target series length.
-//' @return Integer, recommended burn-in length.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
+// Calculate Adaptive Burn-in for AR Process
+// Internal helper: Calculate adaptive burn-in (not exported to R)
 int calc_ar_burnin_cpp(const arma::vec& phi, int n) {
   // Compute persistence (sum of absolute coefficients)
   double persistence = arma::sum(arma::abs(phi));
@@ -50,19 +59,10 @@ int calc_ar_burnin_cpp(const arma::vec& phi, int n) {
 // Thread-Safe AR Generation using dqrng (xoshiro256+)
 // =============================================================================
 
-//' AR Generation with dqrng scalar loop (thread-safe)
-//'
-//' Uses dqrng's xoshiro256+ with scalar generation.
-//' Thread-safe: creates local RNG instance per call.
-//'
-//' @param n Integer, series length to generate.
-//' @param phi Numeric vector, AR coefficients.
-//' @param vara Double, innovation variance.
-//' @param rng_seed Integer, seed for this specific generation.
-//' @return Numeric vector of length n.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
+// AR Generation with dqrng scalar loop (thread-safe)
+// Uses dqrng's xoshiro256+ with scalar generation.
+// Thread-safe: creates local RNG instance per call.
+// Internal: AR generation with scalar normal loop (not exported to R)
 arma::vec gen_ar_dqrng_scalar(int n, const arma::vec& phi, double vara,
                                uint64_t rng_seed) {
   const int p = phi.n_elem;
@@ -97,20 +97,12 @@ arma::vec gen_ar_dqrng_scalar(int n, const arma::vec& phi, double vara,
 }
 
 
-//' AR Generation with dqrng Box-Muller (thread-safe, optimized)
-//'
-//' Uses dqrng's fast uniform generation with Box-Muller transform.
-//' Thread-safe: creates local RNG instance per call.
-//' Generates normals in pairs for efficiency.
-//'
-//' @param n Integer, series length to generate.
-//' @param phi Numeric vector, AR coefficients.
-//' @param vara Double, innovation variance.
-//' @param rng_seed Integer, seed for this specific generation.
-//' @return Numeric vector of length n.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
+// AR Generation with dqrng Box-Muller (thread-safe, optimized)
+// Uses dqrng's fast uniform generation with Box-Muller transform.
+// Thread-safe: creates local RNG instance per call.
+// Generates normals in pairs for efficiency.
+// Internal: AR generation with Box-Muller (not exported to R)
+// This is the primary internal implementation used by gen_ar_seeded_cpp
 arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara,
                                   uint64_t rng_seed) {
   const int p = phi.n_elem;
@@ -191,23 +183,23 @@ static void fill_normals_boxmuller(arma::vec& out, dqrng::xoshiro256plus& rng, d
     }
 }
 
-// Helper: generate single normal using Box-Muller
-static double generate_normal_boxmuller(dqrng::xoshiro256plus& rng, double sd) {
-    std::uniform_real_distribution<double> unif(0.0, 1.0);
-    double u1 = unif(rng);
-    double u2 = unif(rng);
-    while (u1 <= 1e-15) u1 = unif(rng);
-    return sd * std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * M_PI * u2);
-}
-
-// Generate AR series directly into provided buffer (avoids copy on return)
-// Uses ring buffer for burn-in to minimize memory allocation
-void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed) {
+// =============================================================================
+// Internal: AR generation with precomputed sd and burn
+// Used by parallel workers where sd and burn are constant across iterations
+// =============================================================================
+void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi,
+                              double sd, int burn, uint64_t rng_seed) {
     const int n = out.n_elem;
     const int p = phi.n_elem;
 
+    // Guard against buffer overflow - MAX_P=20 for stack arrays below
+    constexpr int MAX_P = 20;
+    if (p > MAX_P) {
+        out.zeros();
+        return;
+    }
+
     dqrng::xoshiro256plus rng(rng_seed);
-    const double sd = std::sqrt(vara);
 
     if (p == 0) {
         // AR(0): fill directly with normals
@@ -215,16 +207,17 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
         return;
     }
 
-    const int burn = calc_ar_burnin_cpp(phi, n);
+    // Pre-generate all burn-in innovations efficiently
+    // Uses both Box-Muller normals (cos AND sin), halving log/sqrt calls
+    arma::vec burn_innovations(burn);
+    fill_normals_boxmuller(burn_innovations, rng, sd);
 
     // Stack buffer for burn-in (ring buffer, only keep last p values)
-    constexpr int MAX_P = 20;
     double prev[MAX_P] = {0};
 
-    // Run burn-in phase, keeping only last p values in ring buffer
+    // Run burn-in phase using pre-generated innovations
     for (int t = 0; t < burn; ++t) {
-        double a = generate_normal_boxmuller(rng, sd);
-        double x = a;
+        double x = burn_innovations[t];
         for (int j = 0; j < p && j <= t; ++j) {
             int idx = ((t - 1 - j) % MAX_P + MAX_P) % MAX_P;
             x += phi[j] * prev[idx];
@@ -253,6 +246,18 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
             }
         }
     }
+}
+
+
+// Generate AR series directly into provided buffer (avoids copy on return)
+// Public API: computes sd and burn internally (use gen_ar_into_precomputed for hot paths)
+void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed) {
+    const int n = out.n_elem;
+    const int p = phi.n_elem;
+    const double sd = std::sqrt(vara);
+    const int burn = (p == 0) ? 0 : calc_ar_burnin_cpp(phi, n);
+
+    gen_ar_into_precomputed(out, phi, sd, burn, rng_seed);
 }
 
 

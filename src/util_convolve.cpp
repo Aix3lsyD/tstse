@@ -1,4 +1,15 @@
-// src/convolve_truncated.cpp
+// =============================================================================
+// FILE: util_convolve.cpp
+// CATEGORY: UTILITY
+// THREAD-SAFE: YES (pure computation)
+//
+// Truncated polynomial convolution for Gegenbauer coefficient sequences.
+// Used with util_gegenb.cpp for long-memory ARUMA fractional differencing.
+//
+// Exports:
+//   - convolve_truncated_cpp(): First n coefficients of polynomial product
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

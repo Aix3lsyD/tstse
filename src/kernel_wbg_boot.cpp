@@ -1,17 +1,34 @@
-// wbg_boot_kernel.cpp - TBB parallel bootstrap kernel for WBG test
-// Uses RcppParallel for parallelization
+// =============================================================================
+// FILE: kernel_wbg_boot.cpp
+// CATEGORY: HOT PATH - Parallel Bootstrap Kernel
+// THREAD-SAFE: YES (TBB workers use pure C++ internals)
+//
+// This is the main entry point for wbg_boot_fast(). Every microsecond matters.
+// Uses RcppParallel (TBB) to run bootstrap iterations in parallel.
+//
+// Call chain: wbg_boot_fast.R -> wbg_bootstrap_kernel_cpp()
+//             -> WBGBootstrapWorker::operator()
+//                 -> gen_ar_into() + co_tstat_ws()
+//
+// Key exports:
+//   - wbg_bootstrap_kernel_cpp(): Main parallel bootstrap
+//   - wbg_bootstrap_coba_kernel_cpp(): COBA adjustment variant
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo, RcppParallel, dqrng, BH)]]
 
 #include <RcppArmadillo.h>
 #include <RcppParallel.h>
-#include "types_pure.h"
+#include "kernel_types.h"
 #include <vector>
+#include <cmath>
 
 using namespace Rcpp;
 
 // Forward declarations - thread-safe functions
 arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara, uint64_t rng_seed);
 void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed);
+void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed);
+int calc_ar_burnin_cpp(const arma::vec& phi, int n);
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion);
 
@@ -35,27 +52,41 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
     const CriterionType ic_type;  // Pre-converted enum (no string comparison in hot path)
     const std::vector<uint64_t>& seeds;
 
+    // Precomputed AR generation parameters (constant, computed once)
+    const double sd;    // sqrt(vara) - precomputed to avoid per-iteration sqrt
+    const int burn;     // burn-in length - precomputed to avoid per-iteration Armadillo ops
+
     // Output (thread-safe write via RVector)
     RcppParallel::RVector<double> results;
 
-    // Constructor
+    // Constructor - precomputes sd and burn for efficiency
     WBGBootstrapWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
                        CriterionType ic_type_,
                        const std::vector<uint64_t>& seeds_,
                        Rcpp::NumericVector results_)
         : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
-          seeds(seeds_), results(results_) {}
+          seeds(seeds_),
+          sd(std::sqrt(vara_)),
+          burn(phi_.n_elem == 0 ? 0 : calc_ar_burnin_cpp(phi_, n_)),
+          results(results_) {}
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
-        // Allocate workspace ONCE for this thread chunk
-        // All iterations in this chunk reuse the same buffers
-        CoBootstrapWorkspace ws;
-        ws.resize(n, maxp);
+        // Thread-local workspace with lazy resize
+        // Each thread allocates once, reuses across ALL chunks it processes
+        // (TBB may call operator() multiple times for the same thread via work-stealing)
+        static thread_local CoBootstrapWorkspace ws;
+        static thread_local int ws_n = 0, ws_maxp = 0;
+
+        if (ws_n != n || ws_maxp != maxp) {
+            ws.resize(n, maxp);
+            ws_n = n;
+            ws_maxp = maxp;
+        }
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series directly into workspace buffer (no copy)
-            gen_ar_into(ws.x_buf, phi, vara, seeds[b]);
+            // Generate AR series using precomputed sd and burn (no sqrt/burnin calc per iteration)
+            gen_ar_into_precomputed(ws.x_buf, phi, sd, burn, seeds[b]);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
             results[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
@@ -157,13 +188,17 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
     const CriterionType ic_type;  // Pre-converted enum
     const std::vector<uint64_t>& seeds;
 
+    // Precomputed AR generation parameters (constant, computed once)
+    const double sd;    // sqrt(vara) - precomputed to avoid per-iteration sqrt
+    const int burn;     // burn-in length - precomputed to avoid per-iteration Armadillo ops
+
     // Pre-allocated output (thread-safe writes to separate indices)
     RcppParallel::RVector<double> tstats;
     RcppParallel::RVector<double> phi1_values;
     RcppParallel::RMatrix<double> phi_matrix;  // nb × maxp
     RcppParallel::RVector<int> orders;
 
-    // Constructor
+    // Constructor - precomputes sd and burn for efficiency
     WBGBootstrapCOBAWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
                            CriterionType ic_type_,
                            const std::vector<uint64_t>& seeds_,
@@ -172,18 +207,29 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
                            Rcpp::NumericMatrix phi_matrix_,
                            Rcpp::IntegerVector orders_)
         : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
-          seeds(seeds_), tstats(tstats_), phi1_values(phi1_values_),
+          seeds(seeds_),
+          sd(std::sqrt(vara_)),
+          burn(phi_.n_elem == 0 ? 0 : calc_ar_burnin_cpp(phi_, n_)),
+          tstats(tstats_), phi1_values(phi1_values_),
           phi_matrix(phi_matrix_), orders(orders_) {}
 
     // Parallel worker function
     void operator()(std::size_t begin, std::size_t end) {
-        // Allocate workspace ONCE for this thread chunk
-        CoBootstrapWorkspace ws;
-        ws.resize(n, maxp);
+        // Thread-local workspace with lazy resize
+        // Each thread allocates once, reuses across ALL chunks it processes
+        // (TBB may call operator() multiple times for the same thread via work-stealing)
+        static thread_local CoBootstrapWorkspace ws;
+        static thread_local int ws_n = 0, ws_maxp = 0;
+
+        if (ws_n != n || ws_maxp != maxp) {
+            ws.resize(n, maxp);
+            ws_n = n;
+            ws_maxp = maxp;
+        }
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series directly into workspace buffer (no copy)
-            gen_ar_into(ws.x_buf, phi, vara, seeds[b]);
+            // Generate AR series using precomputed sd and burn (no sqrt/burnin calc per iteration)
+            gen_ar_into_precomputed(ws.x_buf, phi, sd, burn, seeds[b]);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
             tstats[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
@@ -194,7 +240,7 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 
             // Store results
             orders[b] = ar_fit.p;
-            phi1_values[b] = 1.0 - arma::accu(ar_fit.phi);  // φ(1) from paper
+            phi1_values[b] = std::abs(1.0 - arma::accu(ar_fit.phi));  // |φ(1)| per WBG paper Sec 2.2
 
             // Copy phi coefficients to matrix row (zero-padded)
             for (int j = 0; j < ar_fit.p && j < maxp; ++j) {

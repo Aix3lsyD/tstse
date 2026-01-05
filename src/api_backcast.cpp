@@ -1,3 +1,15 @@
+// =============================================================================
+// FILE: api_backcast.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: YES (pure Rcpp/arma operations)
+//
+// ARMA residual backcasting for likelihood calculations.
+// Initializes residual history for ARMA model fitting.
+//
+// Exports:
+//   - backcast_cpp(): Backcast residuals for ARMA models
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

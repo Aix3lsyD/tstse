@@ -1,4 +1,15 @@
-// src/gegenb.cpp
+// =============================================================================
+// FILE: util_gegenb.cpp
+// CATEGORY: UTILITY
+// THREAD-SAFE: YES (pure computation)
+//
+// Gegenbauer polynomial coefficients for long-memory ARUMA models.
+// Used with util_convolve.cpp for fractional differencing.
+//
+// Exports:
+//   - gegenb_cpp(): Compute Gegenbauer coefficients C_k(d, u)
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

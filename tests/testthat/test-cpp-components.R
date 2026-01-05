@@ -278,19 +278,8 @@ test_that("gen_ar_seeded_cpp respects variance parameter", {
   expect_equal(sample_var, theoretical_var, tolerance = 0.2 * theoretical_var)
 })
 
-test_that("calc_ar_burnin_cpp returns reasonable values", {
-  # Near unit root should have large burn-in
-  burn_high <- calc_ar_burnin_cpp(c(0.99), 1000)
-  expect_true(burn_high >= 500)
-
-  # Low persistence should have minimal burn-in
-  burn_low <- calc_ar_burnin_cpp(c(0.1), 1000)
-  expect_equal(burn_low, 50)
-
-  # Normal case
-  burn_mid <- calc_ar_burnin_cpp(c(0.7, -0.2), 1000)
-  expect_true(burn_mid >= 50 && burn_mid <= 2000)
-})
+# calc_ar_burnin_cpp is now internal (not exported to R)
+# The burn-in logic is tested implicitly via gen_ar_cpp and wbg_boot_fast
 
 test_that("all C++ functions handle minimum viable input", {
   # Minimum series length
@@ -317,20 +306,5 @@ test_that("ols_detrend_full_cpp returns slope and intercept", {
   expect_equal(result$slope, 2, tolerance = 0.1)
 })
 
-test_that("ols_tstat_cpp computes correct t-statistic", {
-  set.seed(1111)
-
-  # Create data with known slope
-  n <- 100
-  t_idx <- 1:n
-  y <- 5 + 0.5 * t_idx + rnorm(n, sd = 2)
-
-  # C++ t-stat
-  tstat_cpp <- ols_tstat_cpp(y, t_idx)
-
-  # R equivalent
-  fit_r <- lm(y ~ t_idx)
-  tstat_r <- summary(fit_r)$coefficients[2, 3]
-
-  expect_equal(tstat_cpp, tstat_r, tolerance = 1e-10)
-})
+# ols_tstat_cpp is now internal (not exported to R)
+# The OLS t-stat logic is tested implicitly via co_tstat_cpp

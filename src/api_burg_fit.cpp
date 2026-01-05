@@ -1,5 +1,15 @@
-// burg_fit.cpp - Burg algorithm for AR coefficient estimation
-// Part of wbg_boot_fast optimization
+// =============================================================================
+// FILE: api_burg_fit.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: NO (returns Rcpp::List)
+//
+// Fixed-order Burg algorithm for AR coefficient estimation.
+// For automatic order selection, use burg_aic_select_cpp() instead.
+//
+// Exports:
+//   - burg_fit_cpp(): [DEPRECATED] Use burg_aic_select_cpp()
+//   - burg_fit_full_cpp(): [DEPRECATED] Use burg_aic_select_cpp()
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
 #include <RcppArmadillo.h>
@@ -15,6 +25,7 @@ using namespace Rcpp;
 //' @return Numeric vector of AR coefficients (length p).
 //' @keywords internal
 //' @noRd
+[[deprecated("Use burg_aic_select_cpp() for automatic order selection")]]
 // [[Rcpp::export]]
 arma::vec burg_fit_cpp(const arma::vec& x, int p) {
   const int n = x.n_elem;
@@ -87,6 +98,7 @@ arma::vec burg_fit_cpp(const arma::vec& x, int p) {
 //' @return List with phi (coefficients) and vara (residual variance).
 //' @keywords internal
 //' @noRd
+[[deprecated("Use burg_aic_select_cpp() for automatic order selection")]]
 // [[Rcpp::export]]
 Rcpp::List burg_fit_full_cpp(const arma::vec& x, int p) {
   const int n = x.n_elem;

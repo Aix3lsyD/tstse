@@ -1,3 +1,15 @@
+// =============================================================================
+// FILE: util_sen_slope.cpp
+// CATEGORY: UTILITY
+// THREAD-SAFE: YES (pure computation)
+//
+// Sen's slope: robust non-parametric trend estimator.
+// Computes median of all pairwise slopes. O(n^2/2) algorithm.
+//
+// Exports:
+//   - sen_slope_cpp(): Compute Sen's slope estimate
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

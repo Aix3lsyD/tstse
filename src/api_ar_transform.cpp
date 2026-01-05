@@ -1,5 +1,15 @@
-// ar_transform.cpp - AR transformation for time series
-// Part of wbg_boot_fast optimization
+// =============================================================================
+// FILE: api_ar_transform.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: YES (pure arma operations)
+//
+// AR transformation functions for Cochrane-Orcutt procedure.
+//
+// Exports:
+//   - ar_transform_cpp(): Apply AR filter phi(B) to series
+//   - co_time_transform_cpp(): [DEPRECATED] O(p) time transform
+//     (Hot path uses O(1) version in kernel_co_tstat.cpp)
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
 #include <RcppArmadillo.h>
@@ -56,6 +66,7 @@ arma::vec ar_transform_cpp(const arma::vec& x, const arma::vec& phi) {
 //' @return Numeric vector of transformed time indices (length n-p).
 //' @keywords internal
 //' @noRd
+[[deprecated("O(p) version - hot path uses O(1) fused in co_tstat_cpp")]]
 // [[Rcpp::export]]
 arma::vec co_time_transform_cpp(int n, const arma::vec& phi) {
   const int p = phi.n_elem;

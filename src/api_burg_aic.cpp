@@ -1,5 +1,15 @@
-// burg_aic_select.cpp - Burg algorithm with AIC model selection
-// Matches R's ar.burg() with var.method=1 (recursive variance)
+// =============================================================================
+// FILE: api_burg_aic.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: NO (returns Rcpp::List)
+//
+// Public Rcpp export for Burg algorithm with AIC/BIC model selection.
+// Matches R's ar.burg() with var.method=1 (recursive variance).
+// For parallel bootstrap, use kernel_burg_aic.cpp functions instead.
+//
+// Exports:
+//   - burg_aic_select_cpp(): Primary Burg + AIC API
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
 #include <RcppArmadillo.h>

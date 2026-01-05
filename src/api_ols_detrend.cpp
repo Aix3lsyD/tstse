@@ -1,5 +1,15 @@
-// ols_detrend.cpp - OLS detrending for time series
-// Part of wbg_boot_fast optimization
+// =============================================================================
+// FILE: api_ols_detrend.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: YES (pure arma operations)
+//
+// OLS detrending: removes linear trend from time series via regression.
+// Equivalent to: resid(lm(x ~ seq_along(x)))
+//
+// Exports:
+//   - ols_detrend_cpp(): Primary API, returns residuals
+//   - ols_detrend_full_cpp(): [DEPRECATED] Debug version with coefficients
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
 #include <RcppArmadillo.h>
@@ -50,6 +60,7 @@ arma::vec ols_detrend_cpp(const arma::vec& x) {
 //' @return List with residuals, intercept, and slope.
 //' @keywords internal
 //' @noRd
+[[deprecated("Debug function - use ols_detrend_cpp() instead")]]
 // [[Rcpp::export]]
 Rcpp::List ols_detrend_full_cpp(const arma::vec& x) {
   const int n = x.n_elem;

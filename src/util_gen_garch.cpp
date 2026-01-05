@@ -1,4 +1,15 @@
-// src/gen_garch.cpp
+// =============================================================================
+// FILE: util_gen_garch.cpp
+// CATEGORY: UTILITY
+// THREAD-SAFE: NO (uses R's RNG)
+//
+// GARCH process generation for volatility modeling.
+// Not used in WBG bootstrap (which is AR-based, not ARCH/GARCH).
+//
+// Exports:
+//   - gen_garch_cpp(): Generate GARCH(p,q) process
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

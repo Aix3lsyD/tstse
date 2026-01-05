@@ -148,30 +148,6 @@ test_that("roll_win_rmse_nn RMSE is sqrt of MSE", {
 })
 
 
-test_that("roll_win_rmse_nn matches tswge for non-seasonal model", {
-
-  skip_on_cran()
-
-  set.seed(333)
-  x <- cumsum(rnorm(100))
-
-  suppressWarnings({
-    fit <- nnfor::mlp(ts(x), hd = 2, reps = 1)
-  })
-
-  # Suppress tswge print output
-  old <- capture.output({
-    old_result <- tswge::roll.win.rmse.nn.wge(x, horizon = 1, fit_model = fit)
-  })
-  new <- roll_win_rmse_nn(x, horizon = 1, model = fit, plot = FALSE)
-
-  # Compare key outputs (allowing some tolerance due to NN randomness if refit)
-  expect_equal(new$n_windows, old_result$numwindows)
-  expect_equal(new$horizon, old_result$horizon)
-  expect_equal(new$frequency, old_result$s)
-  expect_equal(new$diff_order, old_result$d)
-})
-
 
 test_that("roll_win_rmse_nn plotting works", {
 

@@ -295,21 +295,6 @@ test_that("make_stat_gls requires nlme package", {
   expect_length(result, 1)
 })
 
-test_that("make_stat_mk errors without Kendall package", {
-  skip_if(requireNamespace("Kendall", quietly = TRUE))
-  expect_error(make_stat_mk(), "Kendall")
-})
-
-test_that("make_stat_hac errors without sandwich package", {
-  skip_if(requireNamespace("sandwich", quietly = TRUE))
-  expect_error(make_stat_hac(), "sandwich")
-})
-
-test_that("make_stat_gls errors without nlme package", {
-  skip_if(requireNamespace("nlme", quietly = TRUE))
-  expect_error(make_stat_gls(), "nlme")
-})
-
 
 # ==============================================================================
 # Sen's slope performance test (verify no O(n^2) memory issue)

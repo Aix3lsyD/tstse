@@ -1,8 +1,21 @@
-// co_tstat_pure.cpp - Pure C++ Cochrane-Orcutt t-statistic
-// Thread-safe version using C++ structs instead of Rcpp types
+// =============================================================================
+// FILE: kernel_co_tstat.cpp
+// CATEGORY: HOT PATH - Pure C++ Cochrane-Orcutt t-statistic
+// THREAD-SAFE: YES (no Rcpp types in core functions)
+//
+// Contains co_tstat_ws() and co_tstat_fused() - the heart of the bootstrap.
+// co_tstat_fused() uses O(1) time-transform optimization (not O(p) per obs).
+//
+// Key internal functions:
+//   - co_tstat_ws(): Workspace-aware, ZERO allocations per call
+//   - co_tstat_fused(): Single-pass with O(1) time-transform
+//   - ols_detrend_internal(): Thread-safe detrending
+//
+// Called by: kernel_wbg_boot.cpp (WBGBootstrapWorker)
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
-#include "types_pure.h"
+#include "kernel_types.h"
 #include <cmath>
 
 // Forward declaration of pure C++ functions
@@ -233,8 +246,17 @@ static double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion) {
     const int n = x.n_elem;
 
+    // Clamp maxp first (same logic as Burg) to allow short series to proceed
+    if (maxp >= n - 1) {
+        maxp = n - 2;
+    }
+    if (maxp < 1) {
+        maxp = 1;
+    }
+
+    // Need at least 3 observations after removing p lags
     if (n < maxp + 3) {
-        return 0.0;  // Series too short
+        return 0.0;  // Series too short even after clamping
     }
 
     // Step 1: OLS detrend (allocation-optimized)
@@ -257,8 +279,17 @@ double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
                    CoBootstrapWorkspace& ws) {
     const int n = x.n_elem;
 
+    // Clamp maxp first (same logic as Burg) to allow short series to proceed
+    if (maxp >= n - 1) {
+        maxp = n - 2;
+    }
+    if (maxp < 1) {
+        maxp = 1;
+    }
+
+    // Need at least 3 observations after removing p lags
     if (n < maxp + 3) {
-        return 0.0;  // Series too short
+        return 0.0;  // Series too short even after clamping
     }
 
     // Step 1: OLS detrend into workspace.resid (ZERO allocations)
@@ -296,12 +327,14 @@ COResult co_full_pure(const arma::vec& x, int maxp, const std::string& criterion
 
 
 // Rcpp export wrappers (for R interface and validation)
+[[deprecated("Internal pure C++ variant - use co_tstat_cpp()")]]
 // [[Rcpp::export]]
 double co_tstat_pure_export(const arma::vec& x, int maxp = 5,
                              std::string criterion = "aic") {
     return co_tstat_pure(x, maxp, criterion);
 }
 
+[[deprecated("Internal pure C++ variant - use co_full_cpp()")]]
 // [[Rcpp::export]]
 Rcpp::List co_full_pure_export(const arma::vec& x, int maxp = 5,
                                 std::string criterion = "aic") {

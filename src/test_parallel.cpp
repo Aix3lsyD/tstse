@@ -1,10 +1,23 @@
-// parallel_test.cpp - Parallel execution tests for bootstrap
-// Uses RcppParallel (TBB) for parallelization
+// =============================================================================
+// FILE: test_parallel.cpp
+// CATEGORY: TEST ONLY (not for production use)
+// THREAD-SAFE: YES
+//
+// Comparison tests for sequential vs parallel bootstrap implementations.
+// Used for development validation and benchmarking only.
+// ALL FUNCTIONS IN THIS FILE ARE DEPRECATED.
+//
+// Exports (all deprecated):
+//   - test_parallel_seq(): Sequential baseline
+//   - test_parallel_tbb_pure(): TBB with pure C++
+//   - test_parallel_tbb_rcpp(): TBB with Rcpp types
+//   - test_parallel_tbb(): Default TBB test
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo, RcppParallel, dqrng, BH)]]
 
 #include <RcppArmadillo.h>
 #include <RcppParallel.h>
-#include "types_pure.h"
+#include "kernel_types.h"
 #include <vector>
 
 using namespace Rcpp;
@@ -29,6 +42,7 @@ double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion)
 //' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
+[[deprecated("Test function only - not for production use")]]
 // [[Rcpp::export]]
 Rcpp::NumericVector test_parallel_seq(int n, const arma::vec& phi, double vara,
                                        const std::vector<uint64_t>& seeds,
@@ -84,6 +98,7 @@ struct BootstrapWorkerPure : public RcppParallel::Worker {
 //' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
+[[deprecated("Test function only - not for production use")]]
 // [[Rcpp::export]]
 Rcpp::NumericVector test_parallel_tbb_pure(int n, const arma::vec& phi, double vara,
                                             const std::vector<uint64_t>& seeds,
@@ -139,6 +154,7 @@ struct BootstrapWorkerRcpp : public RcppParallel::Worker {
 //' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
+[[deprecated("Test function only - not for production use")]]
 // [[Rcpp::export]]
 Rcpp::NumericVector test_parallel_tbb_rcpp(int n, const arma::vec& phi, double vara,
                                             const std::vector<uint64_t>& seeds,
@@ -169,6 +185,7 @@ Rcpp::NumericVector test_parallel_tbb_rcpp(int n, const arma::vec& phi, double v
 //' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
+[[deprecated("Test function only - not for production use")]]
 // [[Rcpp::export]]
 Rcpp::NumericVector test_parallel_tbb(int n, const arma::vec& phi, double vara,
                                        const std::vector<uint64_t>& seeds,

@@ -1,4 +1,15 @@
-// src/gen_arch.cpp
+// =============================================================================
+// FILE: util_gen_arch.cpp
+// CATEGORY: UTILITY
+// THREAD-SAFE: NO (uses R's RNG)
+//
+// ARCH process generation for volatility modeling.
+// Not used in WBG bootstrap (which is AR-based, not ARCH/GARCH).
+//
+// Exports:
+//   - gen_arch_cpp(): Generate ARCH(q) process
+// =============================================================================
+
 #include <Rcpp.h>
 using namespace Rcpp;
 

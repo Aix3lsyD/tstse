@@ -1,7 +1,15 @@
-// types_pure.h - Pure C++ types for thread-safe parallel execution
-// These structs avoid Rcpp types which aren't thread-safe with OpenMP
-#ifndef TYPES_PURE_H
-#define TYPES_PURE_H
+// =============================================================================
+// FILE: kernel_types.h
+// CATEGORY: HOT PATH - Core type definitions for parallel bootstrap
+// THREAD-SAFE: YES (pure C++ structs, no Rcpp types)
+//
+// These structs are used by the TBB parallel bootstrap kernel.
+// CoBootstrapWorkspace enables zero-allocation iterations.
+//
+// Used by: kernel_wbg_boot.cpp, kernel_co_tstat.cpp, kernel_burg_aic.cpp
+// =============================================================================
+#ifndef KERNEL_TYPES_H
+#define KERNEL_TYPES_H
 
 #include <RcppArmadillo.h>
 #include <string>
@@ -50,10 +58,13 @@ enum CriterionType {
 };
 
 // Helper to convert string to enum (call once at entry point)
+// NOTE: R wrapper should validate criterion before calling C++.
+// Unknown values default to AIC (most common) for safety.
 inline CriterionType criterion_from_string(const std::string& criterion) {
     if (criterion == "aic") return IC_AIC;
     if (criterion == "aicc") return IC_AICC;
-    return IC_BIC;
+    if (criterion == "bic") return IC_BIC;
+    return IC_AIC;  // Default to AIC for unknown strings
 }
 
 // =============================================================================
@@ -73,8 +84,10 @@ struct CoBootstrapWorkspace {
     arma::vec eb;       // Backward prediction errors
     arma::vec a_curr;   // Current AR coefficients
     arma::vec a_prev;   // Previous AR coefficients
+    arma::vec best_phi; // Best AR coefficients (avoids allocation per IC improvement)
+    int best_p;         // Order of best model (for reading best_phi)
 
-    CoBootstrapWorkspace() = default;
+    CoBootstrapWorkspace() : best_p(0) {}
 
     // Resize all vectors for given n and maxp
     void resize(int n, int maxp) {
@@ -85,7 +98,9 @@ struct CoBootstrapWorkspace {
         eb.set_size(n);
         a_curr.set_size(maxp);
         a_prev.set_size(maxp);
+        best_phi.set_size(maxp);
+        best_p = 0;
     }
 };
 
-#endif // TYPES_PURE_H
+#endif // KERNEL_TYPES_H

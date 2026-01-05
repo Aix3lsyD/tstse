@@ -1,5 +1,16 @@
-// co_tstat.cpp - Complete Cochrane-Orcutt t-statistic
-// Part of wbg_boot_fast optimization
+// =============================================================================
+// FILE: api_co_tstat.cpp
+// CATEGORY: INTERFACE (R-facing)
+// THREAD-SAFE: NO (uses Rcpp types, not for parallel use)
+//
+// Public Rcpp exports for Cochrane-Orcutt t-statistic.
+// For parallel bootstrap, use kernel_co_tstat.cpp functions instead.
+//
+// Exports:
+//   - co_tstat_cpp(): Primary CO t-statistic API
+//   - co_full_cpp(): Full results including AR coefficients
+//   - ols_tstat_cpp(): [DEPRECATED] Internal OLS t-stat helper
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
 #include <RcppArmadillo.h>
@@ -12,16 +23,9 @@ arma::vec ar_transform_cpp(const arma::vec& x, const arma::vec& phi);
 arma::vec co_time_transform_cpp(int n, const arma::vec& phi);
 
 
-//' OLS t-statistic for slope (C++ implementation)
-//'
-//' Computes t-statistic for slope coefficient from simple linear regression.
-//'
-//' @param y Numeric vector, response variable.
-//' @param t_idx Numeric vector, predictor (time index).
-//' @return Double, t-statistic for slope.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
+// OLS t-statistic for slope (C++ implementation)
+// Computes t-statistic for slope coefficient from simple linear regression.
+// Internal helper: not exported to R
 double ols_tstat_cpp(const arma::vec& y, const arma::vec& t_idx) {
   const int n = y.n_elem;
 

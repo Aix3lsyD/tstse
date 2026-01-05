@@ -1,9 +1,20 @@
-// burg_aic_pure.cpp - Pure C++ Burg algorithm with AIC selection
-// Thread-safe version using C++ structs instead of Rcpp::List
-// Matches R's ar.burg() with var.method=1 (recursive variance)
+// =============================================================================
+// FILE: kernel_burg_aic.cpp
+// CATEGORY: HOT PATH - Pure C++ Burg algorithm with AIC/BIC selection
+// THREAD-SAFE: YES (returns BurgResult struct, not Rcpp::List)
+//
+// Implements Burg's algorithm for AR coefficient estimation with automatic
+// order selection via AIC, AICc, or BIC. Matches R's ar.burg() exactly.
+//
+// Key internal functions:
+//   - burg_aic_select_pure(): Thread-safe Burg with IC selection
+//   - burg_aic_select_ws(): Workspace-aware variant (ZERO allocations)
+//
+// Called by: kernel_co_tstat.cpp (co_tstat_ws)
+// =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
-#include "types_pure.h"
+#include "kernel_types.h"
 #include <cmath>
 
 
@@ -46,7 +57,13 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
     if (criterion == "aic") {
         ic0 = n * std::log(vara0) + 2.0 * 1;
     } else if (criterion == "aicc") {
-        ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+        // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
+        // Guard against division by zero when n <= 2
+        if (n <= 2) {
+            ic0 = std::numeric_limits<double>::infinity();
+        } else {
+            ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+        }
     } else { // bic
         ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
     }
@@ -70,6 +87,13 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
         }
 
         double phii = (den > 1e-15) ? 2.0 * num / den : 0.0;
+
+        // Stationarity check: |phii| >= 1 indicates non-stationary behavior
+        // This corrupts variance estimates for this and all higher orders
+        if (std::abs(phii) >= 1.0) {
+            // Skip remaining orders - variance estimate is now unreliable
+            break;
+        }
 
         // Update variance using recursive formula (R's var1)
         var_recursive = var_recursive * (1.0 - phii * phii);
@@ -217,10 +241,9 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
     // AR(0) variance
     double vara0 = arma::dot(ws.xc, ws.xc) / n;
 
-    // Track best model
-    int best_p = 0;
+    // Track best model (use workspace buffer to avoid allocation per IC improvement)
+    ws.best_p = 0;
     double best_ic = std::numeric_limits<double>::infinity();
-    arma::vec best_phi;
     double best_vara = vara0;
 
     // IC for AR(0)
@@ -228,7 +251,13 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
     if (ic_type == IC_AIC) {
         ic0 = n * std::log(vara0) + 2.0 * 1;
     } else if (ic_type == IC_AICC) {
-        ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+        // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
+        // Guard against division by zero when n <= 2
+        if (n <= 2) {
+            ic0 = std::numeric_limits<double>::infinity();
+        } else {
+            ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+        }
     } else { // IC_BIC
         ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
     }
@@ -249,6 +278,13 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
         }
 
         double phii = (den > 1e-15) ? 2.0 * num / den : 0.0;
+
+        // Stationarity check: |phii| >= 1 indicates non-stationary behavior
+        // This corrupts variance estimates for this and all higher orders
+        if (std::abs(phii) >= 1.0) {
+            // Skip remaining orders - variance estimate is now unreliable
+            break;
+        }
 
         // Update variance using recursive formula
         var_recursive = var_recursive * (1.0 - phii * phii);
@@ -294,18 +330,22 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
 
         if (ic < best_ic) {
             best_ic = ic;
-            best_p = p;
-            // Only allocation: copy best phi (unavoidable - need to return it)
-            best_phi = ws.a_curr.head(p);
+            ws.best_p = p;
+            // Copy to workspace buffer (no allocation!)
+            for (int j = 0; j < p; ++j) {
+                ws.best_phi[j] = ws.a_curr[j];
+            }
             best_vara = var_recursive;
         }
     }
 
-    return BurgResult(best_phi, best_vara, best_p, best_ic);
+    // Single allocation at return (unavoidable - need to return result)
+    return BurgResult(ws.best_phi.head(ws.best_p), best_vara, ws.best_p, best_ic);
 }
 
 
 // Rcpp export wrapper (for R interface)
+[[deprecated("Internal pure C++ variant - use burg_aic_select_cpp()")]]
 // [[Rcpp::export]]
 Rcpp::List burg_aic_select_pure_export(const arma::vec& x, int maxp = 5,
                                         std::string criterion = "aic") {
