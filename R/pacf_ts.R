@@ -36,7 +36,7 @@ pacf_ts <- function(x,
                     method = c("yw", "burg", "mle"),
                     plot = TRUE,
                     limits = FALSE,
-                    cores = NULL) {
+                    cores = 1L) {
 
   # Input validation
   if (!is.numeric(x) || length(x) == 0) {

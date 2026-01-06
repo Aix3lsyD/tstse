@@ -16,7 +16,7 @@ aic5_ar <- function(x,
                     p = 0:5,
                     type = c("aic", "aicc", "bic"),
                     method = c("mle", "burg", "yw"),
-                    cores = NULL) {
+                    cores = 1L) {
 
   type <- match.arg(type)
   method <- match.arg(method)

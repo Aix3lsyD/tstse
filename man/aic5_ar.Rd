@@ -9,7 +9,7 @@ aic5_ar(
   p = 0:5,
   type = c("aic", "aicc", "bic"),
   method = c("mle", "burg", "yw"),
-  cores = NULL
+  cores = 1L
 )
 }
 \arguments{

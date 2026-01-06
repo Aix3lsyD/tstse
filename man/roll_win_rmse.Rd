@@ -11,7 +11,7 @@ roll_win_rmse(
   theta = 0,
   d = 0L,
   s = 0L,
-  cores = NULL,
+  cores = 1L,
   plot = TRUE,
   verbose = FALSE
 )

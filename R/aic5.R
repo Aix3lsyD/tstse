@@ -35,7 +35,7 @@ aic5 <- function(x,
                  p = 0:5,
                  q = 0:2,
                  type = c("aic", "aicc", "bic"),
-                 cores = NULL) {
+                 cores = 1L) {
 
   type <- match.arg(type)
 

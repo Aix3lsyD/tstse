@@ -66,7 +66,7 @@
 #' @export
 roll_win_rmse <- function(x, horizon = 1L, phi = 0, theta = 0,
                           d = 0L, s = 0L,
-                          cores = NULL, plot = TRUE, verbose = FALSE) {
+                          cores = 1L, plot = TRUE, verbose = FALSE) {
 
   # Input validation
   if (!is.numeric(x) || length(x) == 0) {

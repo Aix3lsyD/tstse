@@ -75,7 +75,7 @@
 #'
 #' @export
 est_garma <- function(x, u_range, lambda_range, p_max = 5L,
-                      n_back = 500L, cores = NULL) {
+                      n_back = 500L, cores = 1L) {
 
   # Input validation
   if (!is.numeric(x) || length(x) < 20L) {

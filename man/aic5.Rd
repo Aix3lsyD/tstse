@@ -4,7 +4,7 @@
 \alias{aic5}
 \title{Display Top 5 ARMA Orders by Information Criterion}
 \usage{
-aic5(x, p = 0:5, q = 0:2, type = c("aic", "aicc", "bic"), cores = NULL)
+aic5(x, p = 0:5, q = 0:2, type = c("aic", "aicc", "bic"), cores = 1L)
 }
 \arguments{
 \item{x}{Numeric vector, the time series.}

@@ -14,7 +14,7 @@ compare_garch(
   include_mean = FALSE,
   solver = "hybrid",
   parallel = FALSE,
-  cores = NULL
+  cores = 1L
 )
 
 \method{print}{garch_comparison}(x, ...)

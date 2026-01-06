@@ -4,7 +4,7 @@
 \alias{est_garma}
 \title{Estimate GARMA Model Parameters}
 \usage{
-est_garma(x, u_range, lambda_range, p_max = 5L, n_back = 500L, cores = NULL)
+est_garma(x, u_range, lambda_range, p_max = 5L, n_back = 500L, cores = 1L)
 }
 \arguments{
 \item{x}{Numeric vector. The time series to analyze.}

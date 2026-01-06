@@ -4,7 +4,7 @@
 \alias{aic_ts}
 \title{AIC/BIC Model Selection for ARMA Models}
 \usage{
-aic_ts(x, p = 0:5, q = 0:2, type = c("aic", "aicc", "bic"), cores = NULL)
+aic_ts(x, p = 0:5, q = 0:2, type = c("aic", "aicc", "bic"), cores = 1L)
 }
 \arguments{
 \item{x}{Numeric vector, the time series.}

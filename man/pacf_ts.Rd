@@ -10,7 +10,7 @@ pacf_ts(
   method = c("yw", "burg", "mle"),
   plot = TRUE,
   limits = FALSE,
-  cores = NULL
+  cores = 1L
 )
 }
 \arguments{

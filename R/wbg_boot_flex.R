@@ -121,7 +121,7 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
                           ar_method = c("burg", "mle"),
                           criterion = c("aic", "aicc", "bic"),
                           bootadj = TRUE,
-                          cores = NULL, seed = NULL,
+                          cores = 1L, seed = NULL,
                           verbose = TRUE) {
 
   ar_method <- match.arg(ar_method)

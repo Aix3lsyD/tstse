@@ -36,7 +36,7 @@ aic_ar <- function(x,
                    p = 1:5,
                    type = c("aic", "aicc", "bic"),
                    method = c("mle", "burg", "yw"),
-                   cores = NULL) {
+                   cores = 1L) {
 
   # Input validation
   if (!is.numeric(x) || length(x) == 0) {

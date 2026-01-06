@@ -14,7 +14,7 @@ wbg_boot_flex(
   ar_method = c("burg", "mle"),
   criterion = c("aic", "aicc", "bic"),
   bootadj = TRUE,
-  cores = NULL,
+  cores = 1L,
   seed = NULL,
   verbose = TRUE
 )

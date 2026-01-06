@@ -67,7 +67,7 @@ compare_garch <- function(data,
                           include_mean = FALSE,
                           solver = "hybrid",
                           parallel = FALSE,
-                          cores = NULL) {
+                          cores = 1L) {
 
   # Check required packages
   if (!requireNamespace("rugarch", quietly = TRUE)) {
