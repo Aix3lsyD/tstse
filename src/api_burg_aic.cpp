@@ -24,6 +24,8 @@ using namespace Rcpp;
 //' @param x Numeric vector, the time series.
 //' @param maxp Integer, maximum AR order to consider.
 //' @param criterion String, information criterion: "aic", "aicc", or "bic".
+//' @param min_p Integer, minimum AR order to consider. Default 0 includes AR(0).
+//'   Set to 1 to exclude AR(0) and match R's aic_burg(p=1:maxp).
 //' @return List with:
 //'   - p: selected AR order
 //'   - phi: AR coefficients (length p)
@@ -33,7 +35,8 @@ using namespace Rcpp;
 //' @noRd
 // [[Rcpp::export]]
 Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp,
-                                std::string criterion = "aic") {
+                                std::string criterion = "aic",
+                                int min_p = 0) {
   const int n = x.n_elem;
 
   if (maxp <= 0) {
@@ -63,21 +66,29 @@ Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp,
   // IC for AR(0): k = 1 parameter (mean)
   // R uses: n * log(var) + 2 * (p + 1) when demean=TRUE
   // For AR(0), p=0, so IC = n * log(var0) + 2 * 1
-  double ic0;
-  if (criterion == "aic") {
-    ic0 = n * std::log(vara0) + 2.0;
-  } else if (criterion == "aicc") {
-    ic0 = n * std::log(vara0) + 2.0 * n / (n - 2);
-  } else {  // bic
-    ic0 = n * std::log(vara0) + std::log(static_cast<double>(n));
+  // Only consider AR(0) if min_p == 0
+  if (min_p == 0) {
+    double ic0;
+    if (criterion == "aic") {
+      ic0 = n * std::log(vara0) + 2.0;
+    } else if (criterion == "aicc") {
+      ic0 = n * std::log(vara0) + 2.0 * n / (n - 2);
+    } else {  // bic
+      ic0 = n * std::log(vara0) + std::log(static_cast<double>(n));
+    }
+    best_ic = ic0;
   }
-  best_ic = ic0;
+  // When min_p > 0, best_ic stays at infinity until we find a valid AR(p) model
 
   // Current variance (recursive formula like R's var1)
   double var_recursive = vara0;
 
   // Temporary storage for Levinson recursion
   arma::vec a_prev;
+
+  // Determine starting order (always compute from p=1 for correct Levinson recursion,
+  // but only consider orders >= min_p for IC comparison)
+  const int start_p = std::max(min_p, 1);
 
   // Single pass through all orders
   for (int p = 1; p <= maxp; ++p) {
@@ -135,8 +146,8 @@ Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp,
       ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
     }
 
-    // Update best model if this is better
-    if (ic < best_ic) {
+    // Update best model if this is better AND p >= min_p
+    if (p >= start_p && ic < best_ic) {
       best_ic = ic;
       best_p = p;
       best_phi = a_curr;

@@ -20,12 +20,14 @@
 
 // Forward declaration of pure C++ functions
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
-                                 const std::string& criterion);
+                                 const std::string& criterion,
+                                 int min_p = 0);
 
 // Forward declaration of workspace-aware Burg function
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                                CriterionType ic_type,
-                               CoBootstrapWorkspace& ws);
+                               CoBootstrapWorkspace& ws,
+                               int min_p = 0);
 
 // Internal: OLS detrend (pure C++) - allocation-optimized version
 // Uses closed-form formulas for t = 1, 2, ..., n to avoid temporary vectors

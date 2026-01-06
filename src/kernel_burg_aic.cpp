@@ -21,8 +21,10 @@
 // Pure C++ Burg with AIC/BIC selection
 // Matches R's ar.burg() implementation exactly
 // Thread-safe: no Rcpp types, only arma and C++ structs
+// min_p: minimum AR order to consider (0 = include AR(0), 1 = AR(1)+ only)
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
-                                 const std::string& criterion) {
+                                 const std::string& criterion,
+                                 int min_p = 0) {
     const int n = x.n_elem;
 
     if (maxp >= n - 1) {
@@ -53,27 +55,35 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
     // IC for AR(0): k = 1 parameter (just variance, or mean if demean=TRUE)
     // R uses: n * log(var) + 2 * p + 2 * demean = n * log(var) + 2 * (p + 1) when demean=TRUE
     // For AR(0), p=0, so IC = n * log(var0) + 2 * 1
-    double ic0;
-    if (criterion == "aic") {
-        ic0 = n * std::log(vara0) + 2.0 * 1;
-    } else if (criterion == "aicc") {
-        // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
-        // Guard against division by zero when n <= 2
-        if (n <= 2) {
-            ic0 = std::numeric_limits<double>::infinity();
-        } else {
-            ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+    // Only consider AR(0) if min_p == 0
+    if (min_p == 0) {
+        double ic0;
+        if (criterion == "aic") {
+            ic0 = n * std::log(vara0) + 2.0 * 1;
+        } else if (criterion == "aicc") {
+            // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
+            // Guard against division by zero when n <= 2
+            if (n <= 2) {
+                ic0 = std::numeric_limits<double>::infinity();
+            } else {
+                ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+            }
+        } else { // bic
+            ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
         }
-    } else { // bic
-        ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
+        best_ic = ic0;
     }
-    best_ic = ic0;
+    // When min_p > 0, best_ic stays at infinity until we find a valid AR(p) model
 
     // Current variance (recursive formula like R's var1)
     double var_recursive = vara0;
 
     // Temporary storage for Levinson recursion
     arma::vec a_prev;
+
+    // Determine starting order (always compute from p=1 for correct Levinson recursion,
+    // but only consider orders >= min_p for IC comparison)
+    const int start_p = std::max(min_p, 1);
 
     // Single pass through all orders (like R's implementation)
     for (int p = 1; p <= maxp; ++p) {
@@ -138,7 +148,8 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
             ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
         }
 
-        if (ic < best_ic) {
+        // Update best model if this is better AND p >= min_p
+        if (p >= start_p && ic < best_ic) {
             best_ic = ic;
             best_p = p;
             best_phi = a_curr;
@@ -217,10 +228,12 @@ void burg_fit_pure(const arma::vec& x, int p, arma::vec& phi_out, double& vara_o
 // =============================================================================
 // Workspace-aware Burg with AIC/BIC selection (ZERO allocations)
 // Uses pre-allocated workspace vectors for thread-local reuse
+// min_p: minimum AR order to consider (0 = include AR(0), 1 = AR(1)+ only)
 // =============================================================================
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                                CriterionType ic_type,
-                               CoBootstrapWorkspace& ws) {
+                               CoBootstrapWorkspace& ws,
+                               int min_p = 0) {
     const int n = x.n_elem;
 
     if (maxp >= n - 1) {
@@ -246,25 +259,32 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
     double best_ic = std::numeric_limits<double>::infinity();
     double best_vara = vara0;
 
-    // IC for AR(0)
-    double ic0;
-    if (ic_type == IC_AIC) {
-        ic0 = n * std::log(vara0) + 2.0 * 1;
-    } else if (ic_type == IC_AICC) {
-        // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
-        // Guard against division by zero when n <= 2
-        if (n <= 2) {
-            ic0 = std::numeric_limits<double>::infinity();
-        } else {
-            ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+    // IC for AR(0) - only consider if min_p == 0
+    if (min_p == 0) {
+        double ic0;
+        if (ic_type == IC_AIC) {
+            ic0 = n * std::log(vara0) + 2.0 * 1;
+        } else if (ic_type == IC_AICC) {
+            // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
+            // Guard against division by zero when n <= 2
+            if (n <= 2) {
+                ic0 = std::numeric_limits<double>::infinity();
+            } else {
+                ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+            }
+        } else { // IC_BIC
+            ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
         }
-    } else { // IC_BIC
-        ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
+        best_ic = ic0;
     }
-    best_ic = ic0;
+    // When min_p > 0, best_ic stays at infinity until we find a valid AR(p) model
 
     // Current variance (recursive formula like R's var1)
     double var_recursive = vara0;
+
+    // Determine starting order (always compute from p=1 for correct Levinson recursion,
+    // but only consider orders >= min_p for IC comparison)
+    const int start_p = std::max(min_p, 1);
 
     // Single pass through all orders
     for (int p = 1; p <= maxp; ++p) {
@@ -328,7 +348,8 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
             ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
         }
 
-        if (ic < best_ic) {
+        // Update best model if this is better AND p >= min_p
+        if (p >= start_p && ic < best_ic) {
             best_ic = ic;
             ws.best_p = p;
             // Copy to workspace buffer (no allocation!)

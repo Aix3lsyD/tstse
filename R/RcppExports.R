@@ -54,6 +54,8 @@ backcast_cpp <- function(x, phi, theta, n_back = 50L) {
 #' @param x Numeric vector, the time series.
 #' @param maxp Integer, maximum AR order to consider.
 #' @param criterion String, information criterion: "aic", "aicc", or "bic".
+#' @param min_p Integer, minimum AR order to consider. Default 0 includes AR(0).
+#'   Set to 1 to exclude AR(0) and match R's aic_burg(p=1:maxp).
 #' @return List with:
 #'   - p: selected AR order
 #'   - phi: AR coefficients (length p)
@@ -61,8 +63,8 @@ backcast_cpp <- function(x, phi, theta, n_back = 50L) {
 #'   - aic: AIC value for selected model
 #' @keywords internal
 #' @noRd
-burg_aic_select_cpp <- function(x, maxp, criterion = "aic") {
-    .Call(`_tstse_burg_aic_select_cpp`, x, maxp, criterion)
+burg_aic_select_cpp <- function(x, maxp, criterion = "aic", min_p = 0L) {
+    .Call(`_tstse_burg_aic_select_cpp`, x, maxp, criterion, min_p)
 }
 
 #' Burg AR Fit (C++ implementation)

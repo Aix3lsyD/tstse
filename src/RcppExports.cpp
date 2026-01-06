@@ -50,15 +50,16 @@ BEGIN_RCPP
 END_RCPP
 }
 // burg_aic_select_cpp
-Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp, std::string criterion);
-RcppExport SEXP _tstse_burg_aic_select_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
+Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp, std::string criterion, int min_p);
+RcppExport SEXP _tstse_burg_aic_select_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP min_pSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
     Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(burg_aic_select_cpp(x, maxp, criterion));
+    Rcpp::traits::input_parameter< int >::type min_p(min_pSEXP);
+    rcpp_result_gen = Rcpp::wrap(burg_aic_select_cpp(x, maxp, criterion, min_p));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -400,7 +401,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_ar_transform_cpp", (DL_FUNC) &_tstse_ar_transform_cpp, 2},
     {"_tstse_co_time_transform_cpp", (DL_FUNC) &_tstse_co_time_transform_cpp, 2},
     {"_tstse_backcast_cpp", (DL_FUNC) &_tstse_backcast_cpp, 4},
-    {"_tstse_burg_aic_select_cpp", (DL_FUNC) &_tstse_burg_aic_select_cpp, 3},
+    {"_tstse_burg_aic_select_cpp", (DL_FUNC) &_tstse_burg_aic_select_cpp, 4},
     {"_tstse_burg_fit_cpp", (DL_FUNC) &_tstse_burg_fit_cpp, 2},
     {"_tstse_burg_fit_full_cpp", (DL_FUNC) &_tstse_burg_fit_full_cpp, 2},
     {"_tstse_co_tstat_cpp", (DL_FUNC) &_tstse_co_tstat_cpp, 3},

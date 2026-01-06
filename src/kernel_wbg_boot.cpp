@@ -30,13 +30,13 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
 void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed);
 int calc_ar_burnin_cpp(const arma::vec& phi, int n);
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
-BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion);
+BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion, int min_p = 0);
 
 // Forward declarations - workspace-aware functions (ZERO allocations)
 double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
                    CoBootstrapWorkspace& ws);
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp, CriterionType ic_type,
-                               CoBootstrapWorkspace& ws);
+                               CoBootstrapWorkspace& ws, int min_p = 0);
 
 
 // =============================================================================

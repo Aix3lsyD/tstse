@@ -18,7 +18,7 @@ using namespace Rcpp;
 
 // Forward declarations of helper functions (defined in other files)
 arma::vec ols_detrend_cpp(const arma::vec& x);
-Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp, std::string criterion);
+Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp, std::string criterion, int min_p = 0);
 arma::vec ar_transform_cpp(const arma::vec& x, const arma::vec& phi);
 arma::vec co_time_transform_cpp(int n, const arma::vec& phi);
 
