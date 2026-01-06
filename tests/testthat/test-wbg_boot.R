@@ -112,7 +112,7 @@ test_that("wbg_boot handles AR(0) case", {
 })
 
 test_that("wbg_boot parallel gives consistent results", {
-  skip("Parallel RNG uses future.seed which differs from manual set.seed()")
+  skip("Parallel RNG differs between sequential and parallel execution")
   skip_on_cran()
   skip_if(parallel::detectCores() < 2, "Not enough cores for parallel test")
 

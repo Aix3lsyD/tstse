@@ -49,8 +49,7 @@ Imports:
     Rcpp,
     RcppParallel,
     rlang,
-    future,
-    future.apply
+    codetools
 URL: https://github.com/Aix3lsyD/tstse
 BugReports: https://github.com/Aix3lsyD/tstse/issues
 Author: Wayne Woodward [aut], Bivin Sadler [cre], Kyle Evans [ctb]

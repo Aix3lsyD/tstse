@@ -281,3 +281,104 @@ test_that("make_gen_garch validates inputs", {
   expect_error(make_gen_garch(omega = 0.1, alpha = -0.1), "alpha coefficients must be non-negative")
   expect_error(make_gen_garch(omega = 0.1, alpha = 0.1, beta = -0.1), "beta coefficients must be non-negative")
 })
+
+
+# ==============================================================================
+# make_gen_hetero tests
+# ==============================================================================
+
+test_that("make_gen_hetero returns a function", {
+  gen <- make_gen_hetero()
+  expect_type(gen, "closure")
+})
+
+test_that("make_gen_hetero generates correct length", {
+  gen <- make_gen_hetero()
+  x <- gen(100)
+  expect_length(x, 100)
+})
+
+test_that("make_gen_hetero generates numeric with no NA", {
+  gen <- make_gen_hetero()
+  x <- gen(100)
+  expect_type(x, "double")
+  expect_false(any(is.na(x)))
+})
+
+test_that("make_gen_hetero default uses linear weights (1,2,...,n)", {
+  gen <- make_gen_hetero()
+  set.seed(42)
+  x <- gen(100)
+  # Variance should increase with time - later values have larger weights
+  var_first <- var(x[1:25])
+  var_last <- var(x[76:100])
+  # Last quarter should have higher variance on average (weights 76-100 vs 1-25)
+  expect_true(var_last > var_first)
+})
+
+test_that("make_gen_hetero accepts function for w", {
+  # sqrt weight function
+  gen <- make_gen_hetero(w = function(n) sqrt(seq_len(n)))
+  x <- gen(100)
+  expect_length(x, 100)
+  expect_type(x, "double")
+})
+
+test_that("make_gen_hetero function w must return correct length", {
+  gen <- make_gen_hetero(w = function(n) seq_len(n + 1))  # Returns n+1 values
+  expect_error(gen(100), "Weight function must return exactly n values")
+})
+
+test_that("make_gen_hetero accepts numeric vector for w", {
+  weights <- rep(2, 100)
+  gen <- make_gen_hetero(w = weights)
+  x <- gen(50)  # Request fewer than available
+  expect_length(x, 50)
+})
+
+test_that("make_gen_hetero vector w must have sufficient length", {
+  weights <- rep(1, 50)
+  gen <- make_gen_hetero(w = weights)
+  expect_error(gen(100), "Weight vector must have length >= n")
+})
+
+test_that("make_gen_hetero respects sd parameter", {
+  gen <- make_gen_hetero(w = function(n) rep(1, n), sd = 2)
+  set.seed(42)
+  x <- gen(10000)
+  # With unit weights, should have sd close to 2
+  expect_true(abs(sd(x) - 2) < 0.1)
+})
+
+test_that("make_gen_hetero validates sd", {
+  expect_error(make_gen_hetero(sd = 0), "sd must be positive")
+  expect_error(make_gen_hetero(sd = -1), "sd must be positive")
+})
+
+test_that("make_gen_hetero validates w type", {
+  expect_error(make_gen_hetero(w = "invalid"), "w must be NULL, a function, or a numeric vector")
+  expect_error(make_gen_hetero(w = list(1, 2, 3)), "w must be NULL, a function, or a numeric vector")
+})
+
+test_that("make_gen_hetero with constant weights produces homoscedastic output", {
+  gen <- make_gen_hetero(w = function(n) rep(1, n))
+  set.seed(42)
+  x <- gen(1000)
+  # Variance should be similar in all quarters
+  vars <- sapply(1:4, function(i) var(x[((i - 1) * 250 + 1):(i * 250)]))
+  cv <- sd(vars) / mean(vars)  # Coefficient of variation
+
+  expect_true(cv < 0.3)  # Should be relatively stable
+})
+
+test_that("make_gen_hetero works with common weight patterns", {
+  # Exponential weights
+  gen_exp <- make_gen_hetero(w = function(n) exp(seq_len(n) / n))
+  x_exp <- gen_exp(50)
+  expect_length(x_exp, 50)
+
+  # Periodic weights
+  gen_periodic <- make_gen_hetero(w = function(n) 1 + 0.5 * sin(2 * pi * seq_len(n) / 12))
+  x_periodic <- gen_periodic(48)
+  expect_length(x_periodic, 48)
+})

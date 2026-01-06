@@ -669,3 +669,87 @@ make_gen_garch <- function(omega,
     as.numeric(path@path$seriesSim)
   }
 }
+
+
+# ==============================================================================
+# Heteroscedastic Normal Innovation Generator
+# ==============================================================================
+
+#' Create a Heteroscedastic Normal Innovation Generator
+#'
+#' Factory function that returns an innovation generator with time-varying
+#' variance. Innovations are scaled by weights w, allowing for patterns like
+#' increasing variance, periodic variance, or custom heteroscedasticity.
+#'
+#' @param w Weight specification. One of:
+#'   \itemize{
+#'     \item \code{NULL} (default): Use linear weights \code{1, 2, ..., n}
+#'       (variance increases linearly with time)
+#'     \item A function: Called as \code{w(n)} to generate n weights
+#'     \item A numeric vector: Used directly; must have length >= n when
+#'       generator is called
+#'   }
+#' @param sd Base standard deviation before weighting. Default is 1.
+#'
+#' @return A function with signature \code{function(n)} that generates
+#'   \code{n} heteroscedastic normal innovations.
+#'
+#' @details
+#' The generator produces: \code{w[1:n] * rnorm(n, 0, sd)}
+#'
+#' Common weight patterns:
+#' \itemize{
+#'   \item Linear: \code{w = NULL} or \code{w = function(n) seq_len(n)}
+#'   \item Sqrt: \code{w = function(n) sqrt(seq_len(n))}
+#'   \item Exponential: \code{w = function(n) exp(seq_len(n) / n)}
+#'   \item Periodic: \code{w = function(n) 1 + 0.5 * sin(2 * pi * seq_len(n) / 12)}
+#' }
+#'
+#' @export
+#'
+#' @examples
+#' # Default linear increasing variance
+#' hetero_gen <- make_gen_hetero()
+#' innovations <- hetero_gen(100)
+#' plot(innovations, type = "l")
+#'
+#' # Custom weight function (sqrt growth)
+#' hetero_sqrt <- make_gen_hetero(w = function(n) sqrt(seq_len(n)))
+#'
+#' # Fixed weight vector
+#' weights <- c(rep(1, 50), rep(3, 50))  # Jump in variance
+#' hetero_jump <- make_gen_hetero(w = weights)
+make_gen_hetero <- function(w = NULL, sd = 1) {
+  if (sd <= 0) {
+    stop("sd must be positive")
+  }
+
+  # Validate w if provided as vector
+  if (!is.null(w) && !is.function(w) && !is.numeric(w)) {
+    stop("w must be NULL, a function, or a numeric vector")
+  }
+
+  force(w)
+  force(sd)
+
+  function(n) {
+    # Determine weights
+    if (is.null(w)) {
+      weights <- seq_len(n)
+    } else if (is.function(w)) {
+      weights <- w(n)
+      if (length(weights) != n) {
+        stop("Weight function must return exactly n values")
+      }
+    } else {
+      # w is a numeric vector
+      if (length(w) < n) {
+        stop("Weight vector must have length >= n (", n, ")")
+      }
+      weights <- w[seq_len(n)]
+    }
+
+    # Generate scaled innovations
+    weights * rnorm(n, mean = 0, sd = sd)
+  }
+}
