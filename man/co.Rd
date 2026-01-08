@@ -8,7 +8,10 @@ co(
   x,
   maxp = 5L,
   method = c("burg", "mle", "yw"),
-  type = c("aic", "aicc", "bic")
+  type = c("aic", "aicc", "bic"),
+  iterate = FALSE,
+  max_iter = 50L,
+  tol = 1e-06
 )
 }
 \arguments{
@@ -17,10 +20,20 @@ co(
 \item{maxp}{Maximum AR order for model selection. Default is 5.}
 
 \item{method}{Character. Method for AR estimation: \code{"mle"}, \code{"burg"},
-or \code{"yw"}. Default is \code{"mle"}.}
+or \code{"yw"}. Default is \code{"burg"}.}
 
 \item{type}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
+
+\item{iterate}{Logical. If \code{TRUE}, iterates by re-estimating AR coefficients
+from Cochrane-Orcutt residuals until convergence. If \code{FALSE} (default),
+performs a single-pass estimation.}
+
+\item{max_iter}{Integer. Maximum iterations for iterative method.
+Default is 50. Only used when \code{iterate = TRUE}.}
+
+\item{tol}{Numeric. Convergence tolerance for phi in iterative method.
+Default is 1e-6. Iteration stops when max|phi_new - phi_old| < tol.}
 }
 \value{
 A list containing:
@@ -55,6 +68,8 @@ information criterion order selection
 \item Transforms the data using \eqn{\hat{\phi}(B)} to obtain
 \eqn{W_t = \hat{\phi}(B)Y_t}
 \item Regresses \eqn{W_t} on the transformed time index
+\item (If \code{iterate = TRUE}) Re-estimates AR from CO residuals and repeats
+steps 3-4 until convergence
 }
 
 Note: The p-value returned assumes the transformed residuals are

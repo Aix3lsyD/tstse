@@ -43,6 +43,43 @@ make_stat_co <- function(maxp = 5L, ar_method = c("burg", "mle"),
 }
 
 
+#' Create Prais-Winsten Statistic Function
+#'
+#' Creates a function that computes the Prais-Winsten t-statistic for
+#' testing trend in a time series with AR(1) correlated errors.
+#'
+#' @return A function that takes a numeric vector `x` and returns
+#'   the Prais-Winsten t-statistic for the trend coefficient.
+#'
+#' @details
+#' The Prais-Winsten method is similar to Cochrane-Orcutt but preserves the
+#' first observation using quasi-differencing:
+#' \deqn{W_1 = \sqrt{1-\rho^2} \cdot X_1}
+#' \deqn{W_t = X_t - \rho X_{t-1} \quad \text{for } t > 1}
+#'
+#' This is more efficient than Cochrane-Orcutt because no observations are lost.
+#' The AR(1) coefficient \eqn{\rho} is estimated from the lag-1 autocorrelation
+#' of OLS trend residuals.
+#'
+#' @seealso [wbg_boot_flex()], [pw_fast()], [make_stat_co()]
+#'
+#' @examples
+#' # Create statistic function
+#' stat_fn <- make_stat_pw()
+#'
+#' # Use with bootstrap
+#' set.seed(123)
+#' x <- arima.sim(list(ar = 0.7), n = 100)
+#' stat_fn(x)  # Returns PW t-statistic
+#'
+#' @export
+make_stat_pw <- function() {
+  function(x) {
+    pw_tstat_cpp(x)
+  }
+}
+
+
 #' Create OLS t-Statistic Function
 #'
 #' Creates a function that computes the ordinary least squares t-statistic

@@ -156,6 +156,61 @@ ols_detrend_full_cpp <- function(x) {
     .Call(`_tstse_ols_detrend_full_cpp`, x)
 }
 
+#' Prais-Winsten t-statistic (C++ implementation)
+#'
+#' Computes the Prais-Winsten t-statistic for testing H0: slope = 0.
+#' This is a single-pass implementation using AR(1) quasi-differencing.
+#'
+#' @param x Numeric vector, the time series.
+#' @return Double, Prais-Winsten t-statistic.
+#' @keywords internal
+#' @noRd
+pw_tstat_cpp <- function(x) {
+    .Call(`_tstse_pw_tstat_cpp`, x)
+}
+
+#' Prais-Winsten Full Results (C++ implementation)
+#'
+#' Returns full PW results including AR(1) coefficient rho.
+#' For debugging and validation purposes.
+#'
+#' @param x Numeric vector, the time series.
+#' @return List with tpw, rho, and vara.
+#' @keywords internal
+#' @noRd
+pw_full_cpp <- function(x) {
+    .Call(`_tstse_pw_full_cpp`, x)
+}
+
+#' Iterative Prais-Winsten t-statistic (C++ implementation)
+#'
+#' Computes the Prais-Winsten t-statistic using iterative estimation.
+#' Iterates until rho converges or max_iter is reached.
+#'
+#' @param x Numeric vector, the time series.
+#' @param max_iter Integer, maximum iterations (default 50).
+#' @param tol Double, convergence tolerance for rho (default 1e-6).
+#' @return Double, Prais-Winsten t-statistic.
+#' @keywords internal
+#' @noRd
+pw_tstat_iterative_cpp <- function(x, max_iter = 50L, tol = 1e-6) {
+    .Call(`_tstse_pw_tstat_iterative_cpp`, x, max_iter, tol)
+}
+
+#' Iterative Prais-Winsten Full Results (C++ implementation)
+#'
+#' Returns full iterative PW results including AR(1) coefficient rho.
+#'
+#' @param x Numeric vector, the time series.
+#' @param max_iter Integer, maximum iterations (default 50).
+#' @param tol Double, convergence tolerance for rho (default 1e-6).
+#' @return List with tpw, rho, and vara.
+#' @keywords internal
+#' @noRd
+pw_full_iterative_cpp <- function(x, max_iter = 50L, tol = 1e-6) {
+    .Call(`_tstse_pw_full_iterative_cpp`, x, max_iter, tol)
+}
+
 burg_aic_select_pure_export <- function(x, maxp = 5L, criterion = "aic") {
     .Call(`_tstse_burg_aic_select_pure_export`, x, maxp, criterion)
 }
@@ -278,6 +333,76 @@ wbg_bootstrap_coba_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, criter
 #' @noRd
 wbg_bootstrap_coba_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L) {
     .Call(`_tstse_wbg_bootstrap_coba_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size)
+}
+
+#' Combined CO + PW Bootstrap Kernel
+#'
+#' Computes both CO and PW bootstrap t-statistics in parallel.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+#' @param maxp_co Integer, maximum AR order for CO test.
+#' @param maxp_pw Integer, maximum AR order for PW (typically 1).
+#' @param criterion String, IC for AR selection.
+#' @param grain_size Integer, minimum iterations per thread.
+#' @return List with co_tstats and pw_tstats.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_copw_kernel_cpp <- function(n, phi, vara, seeds, maxp_co = 5L, maxp_pw = 1L, criterion = "aic", grain_size = 1L) {
+    .Call(`_tstse_wbg_bootstrap_copw_kernel_cpp`, n, phi, vara, seeds, maxp_co, maxp_pw, criterion, grain_size)
+}
+
+#' Combined CO + PW COBA Bootstrap Kernel
+#'
+#' Computes both CO and PW bootstrap with COBA data collection.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds.
+#' @param maxp_co Integer, maximum AR order for CO.
+#' @param maxp_pw Integer, maximum AR order for PW (typically 1).
+#' @param criterion String, IC for AR selection.
+#' @param grain_size Integer, minimum iterations per thread.
+#' @return List with CO and PW results for COBA.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_copw_coba_kernel_cpp <- function(n, phi, vara, seeds, maxp_co = 5L, maxp_pw = 1L, criterion = "aic", grain_size = 1L) {
+    .Call(`_tstse_wbg_bootstrap_copw_coba_kernel_cpp`, n, phi, vara, seeds, maxp_co, maxp_pw, criterion, grain_size)
+}
+
+#' PW-Only Bootstrap Kernel (generates from AR(1))
+#'
+#' Computes PW bootstrap t-statistics by generating series from AR(1).
+#'
+#' @param n Integer, series length.
+#' @param rho Double, AR(1) coefficient for null model.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of uint64 seeds.
+#' @param grain_size Integer, minimum iterations per thread.
+#' @return NumericVector of PW t-statistics.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_pw_kernel_cpp <- function(n, rho, vara, seeds, grain_size = 1L) {
+    .Call(`_tstse_wbg_bootstrap_pw_kernel_cpp`, n, rho, vara, seeds, grain_size)
+}
+
+#' PW-Only Bootstrap Kernel with COBA data collection
+#'
+#' Computes PW bootstrap t-statistics and collects rho estimates for COBA.
+#'
+#' @param n Integer, series length.
+#' @param rho Double, AR(1) coefficient for null model.
+#' @param vara Double, innovation variance.
+#' @param seeds Vector of uint64 seeds.
+#' @param grain_size Integer, minimum iterations per thread.
+#' @return List with pw_tstats and rho_values.
+#' @keywords internal
+#' @noRd
+wbg_bootstrap_pw_coba_kernel_cpp <- function(n, rho, vara, seeds, grain_size = 1L) {
+    .Call(`_tstse_wbg_bootstrap_pw_coba_kernel_cpp`, n, rho, vara, seeds, grain_size)
 }
 
 #' Sequential Bootstrap Test (Baseline)

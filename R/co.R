@@ -7,9 +7,16 @@
 #' @param x A numeric vector containing the time series data.
 #' @param maxp Maximum AR order for model selection. Default is 5.
 #' @param method Character. Method for AR estimation: `"mle"`, `"burg"`,
-#'   or `"yw"`. Default is `"mle"`.
+#'   or `"yw"`. Default is `"burg"`.
 #' @param type Character. Information criterion for order selection:
 #'   `"aic"`, `"aicc"`, or `"bic"`. Default is `"aic"`.
+#' @param iterate Logical. If `TRUE`, iterates by re-estimating AR coefficients
+#'   from Cochrane-Orcutt residuals until convergence. If `FALSE` (default),
+#'   performs a single-pass estimation.
+#' @param max_iter Integer. Maximum iterations for iterative method.
+#'   Default is 50. Only used when `iterate = TRUE`.
+#' @param tol Numeric. Convergence tolerance for phi in iterative method.
+#'   Default is 1e-6. Iteration stops when max|phi_new - phi_old| < tol.
 #'
 #' @return A list containing:
 #'   \item{x}{The original time series.}
@@ -38,6 +45,8 @@
 #'   \item Transforms the data using \eqn{\hat{\phi}(B)} to obtain
 #'     \eqn{W_t = \hat{\phi}(B)Y_t}
 #'   \item Regresses \eqn{W_t} on the transformed time index
+#'   \item (If `iterate = TRUE`) Re-estimates AR from CO residuals and repeats
+#'     steps 3-4 until convergence
 #' }
 #'
 #' Note: The p-value returned assumes the transformed residuals are
@@ -73,7 +82,8 @@
 #'
 #' @export
 co <- function(x, maxp = 5L, method = c("burg", "mle", "yw"),
-               type = c("aic", "aicc", "bic")) {
+               type = c("aic", "aicc", "bic"),
+               iterate = FALSE, max_iter = 50L, tol = 1e-6) {
 
   method <- match.arg(method)
   type <- match.arg(type)
@@ -90,7 +100,7 @@ co <- function(x, maxp = 5L, method = c("burg", "mle", "yw"),
   maxp <- as.integer(maxp)
 
   # Step 1: OLS fit and residuals
- t1 <- seq_len(n)
+  t1 <- seq_len(n)
   d <- stats::lm(x ~ t1)
   z_x <- stats::resid(d)
 
@@ -99,21 +109,66 @@ co <- function(x, maxp = 5L, method = c("burg", "mle", "yw"),
   ar_fit <- aic_ar(z_x, p = seq_len(maxp), method = method, type = type, cores = 1L)
   pp <- ar_fit$p
   phi <- ar_fit$phi
+  ar_method <- ar_fit$method
 
-  # Step 3: Transform the data
-  x_trans <- artrans(x, phi = phi, plot = FALSE)
+  # Helper function to perform CO transformation and regression
+  co_transform_regress <- function(phi_current) {
+    pp_cur <- length(phi_current)
 
-  # Step 4: Compute transformed time index
-  # For AR(p), the transformed time is t - sum(phi_j * (t - j))
-  p1 <- pp + 1L
-  t_co <- numeric(n)
+    # Transform the data
+    x_trans <- artrans(x, phi = phi_current, plot = FALSE)
 
-  for (tt in p1:n) {
-    t_co[tt] <- tt - sum(phi * (tt - seq_len(pp)))
+    # Compute transformed time index
+    p1 <- pp_cur + 1L
+    t_co <- numeric(n)
+    for (tt in p1:n) {
+      t_co[tt] <- tt - sum(phi_current * (tt - seq_len(pp_cur)))
+    }
+
+    # Regress transformed data on transformed time
+    d_co <- stats::lm(x_trans ~ t_co[p1:n])
+
+    list(
+      x_trans = x_trans,
+      t_co = t_co,
+      d_co = d_co,
+      p1 = p1,
+      residuals = stats::resid(d_co)
+    )
   }
 
-  # Step 5: Regress transformed data on transformed time
-  d_co <- stats::lm(x_trans ~ t_co[p1:n])
+  # Perform initial CO transformation and regression
+  co_result <- co_transform_regress(phi)
+
+  # Iterative CO: re-estimate AR from CO residuals until convergence
+  if (iterate && max_iter > 1L) {
+    for (iter in seq_len(max_iter - 1L)) {
+      phi_old <- phi
+
+      # Re-fit AR to CO residuals
+      ar_fit_new <- aic_ar(co_result$residuals, p = seq_len(maxp),
+                           method = method, type = type, cores = 1L)
+      pp <- ar_fit_new$p
+      phi <- ar_fit_new$phi
+
+      # Check convergence (handle different lengths by padding with zeros)
+      len_old <- length(phi_old)
+      len_new <- length(phi)
+      max_len <- max(len_old, len_new)
+      phi_old_pad <- c(phi_old, rep(0, max_len - len_old))
+      phi_new_pad <- c(phi, rep(0, max_len - len_new))
+
+      if (max(abs(phi_new_pad - phi_old_pad)) < tol) {
+        break
+      }
+
+      # Re-compute CO transformation with new phi
+      co_result <- co_transform_regress(phi)
+    }
+  }
+
+  # Extract final results
+  d_co <- co_result$d_co
   d_co_sum <- summary(d_co)
 
   list(
@@ -125,6 +180,6 @@ co <- function(x, maxp = 5L, method = c("burg", "mle", "yw"),
     z_phi     = phi,
     pvalue    = d_co_sum$coefficients[2, 4],
     tco       = d_co_sum$coefficients[2, 3],
-    method    = ar_fit$method
+    method    = ar_method
   )
 }

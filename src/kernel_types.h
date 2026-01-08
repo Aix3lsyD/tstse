@@ -38,6 +38,17 @@ struct COResult {
         : tco(tco_), p(p_), phi(phi_), vara(vara_) {}
 };
 
+// Result from Prais-Winsten procedure
+struct PWResult {
+    double tpw;         // PW t-statistic
+    double rho;         // AR(1) coefficient
+    double vara;        // Residual variance
+
+    PWResult() : tpw(0.0), rho(0.0), vara(0.0) {}
+    PWResult(double tpw_, double rho_, double vara_)
+        : tpw(tpw_), rho(rho_), vara(vara_) {}
+};
+
 // Result from OLS regression
 struct OLSResult {
     arma::vec residuals;
@@ -100,6 +111,26 @@ struct CoBootstrapWorkspace {
         a_prev.set_size(maxp);
         best_phi.set_size(maxp);
         best_p = 0;
+    }
+};
+
+// =============================================================================
+// Thread-local workspace for PW bootstrap iterations
+// Simpler than CO workspace (no variable-order AR, just AR(1))
+// =============================================================================
+struct PwBootstrapWorkspace {
+    // AR series buffer
+    arma::vec x_buf;
+
+    // OLS detrend workspace
+    arma::vec resid;
+
+    PwBootstrapWorkspace() {}
+
+    // Resize all vectors for given n
+    void resize(int n) {
+        x_buf.set_size(n);
+        resid.set_size(n);
     }
 };
 

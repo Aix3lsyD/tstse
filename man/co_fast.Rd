@@ -4,7 +4,14 @@
 \alias{co_fast}
 \title{Fast Cochrane-Orcutt Estimation Using C++ Primitives}
 \usage{
-co_fast(x, maxp = 5L, type = c("aic", "aicc", "bic"))
+co_fast(
+  x,
+  maxp = 5L,
+  type = c("aic", "aicc", "bic"),
+  iterate = FALSE,
+  max_iter = 50L,
+  tol = 1e-06
+)
 }
 \arguments{
 \item{x}{A numeric vector containing the time series data.}
@@ -13,6 +20,16 @@ co_fast(x, maxp = 5L, type = c("aic", "aicc", "bic"))
 
 \item{type}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
+
+\item{iterate}{Logical. If \code{TRUE}, iterates by re-estimating AR coefficients
+from Cochrane-Orcutt residuals until convergence. If \code{FALSE} (default),
+performs a single-pass estimation.}
+
+\item{max_iter}{Integer. Maximum iterations for iterative method.
+Default is 50. Only used when \code{iterate = TRUE}.}
+
+\item{tol}{Numeric. Convergence tolerance for phi in iterative method.
+Default is 1e-6. Iteration stops when max|phi_new - phi_old| < tol.}
 }
 \value{
 A list containing the same elements as \code{\link[=co]{co()}}:
@@ -38,6 +55,12 @@ This function uses C++ implementations for maximum performance:
 \item OLS detrending via \code{ols_detrend_cpp()}
 \item AR transformation via \code{ar_transform_cpp()}
 }
+
+\strong{Iterative mode} (\code{iterate = TRUE}): Classical Cochrane-Orcutt iterates
+by re-estimating AR coefficients from the CO residuals until convergence.
+This can provide more accurate estimates when the initial AR fit is poor.
+Single-pass mode (\code{iterate = FALSE}, default) is typically sufficient and
+is used by \code{\link[=wbg_boot_fast]{wbg_boot_fast()}} for performance.
 
 \strong{Important note on AR order selection}: \code{co_fast()} uses C++ Burg which
 computes variance via the recursive formula \code{var(p) = var(0) * prod(1 - phii^2)},

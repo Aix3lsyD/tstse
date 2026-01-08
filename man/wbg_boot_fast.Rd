@@ -10,6 +10,8 @@ wbg_boot_fast(
   maxp = 5L,
   criterion = c("aic", "aicc", "bic"),
   bootadj = FALSE,
+  pw_stat = FALSE,
+  maxp_pw = 1L,
   seed = NULL
 )
 }
@@ -18,14 +20,20 @@ wbg_boot_fast(
 
 \item{nb}{Number of bootstrap replicates. Default is 399.}
 
-\item{maxp}{Maximum AR order for model selection. Default is 5.}
+\item{maxp}{Maximum AR order for Cochrane-Orcutt model selection. Default is 5.}
 
 \item{criterion}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
 
-\item{bootadj}{Logical. If \code{TRUE}, performs the COBA (Cochrane-Orcutt
-Bootstrap Adjustment) variance adjustment for improved small-sample
-performance. Default is \code{FALSE} for maximum speed.}
+\item{bootadj}{Logical. If \code{TRUE}, performs the two-stage bootstrap
+adjustment (variance correction) for improved small-sample performance.
+Default is \code{FALSE} for maximum speed.}
+
+\item{pw_stat}{Logical. If \code{TRUE}, also computes Prais-Winsten t-statistics
+alongside the Cochrane-Orcutt statistics. Default is \code{FALSE}.}
+
+\item{maxp_pw}{Maximum AR order for Prais-Winsten (typically 1 for AR(1)).
+Default is 1. Only used when \code{pw_stat = TRUE}.}
 
 \item{seed}{Integer, random seed for reproducibility. Default NULL.}
 }
@@ -36,17 +44,29 @@ A list of class "wbg_boot_fast" containing:
 \item{vara}{Innovation variance for the null model.}
 \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
-\item{boot_tstats}{Vector of bootstrap t-statistics.}
+\item{boot_tstats}{Vector of bootstrap CO t-statistics.}
 \item{n}{Length of input series.}
 \item{nb}{Number of bootstrap replicates used.}
-\item{maxp}{Maximum AR order considered.}
+\item{maxp}{Maximum AR order considered for CO.}
 \item{criterion}{Information criterion used.}
 
 If \code{bootadj = TRUE}, also includes:
-\item{tco_obs_adj}{COBA-adjusted observed t-statistic.}
-\item{pvalue_adj}{COBA-adjusted two-sided p-value.}
-\item{adj_factor}{Variance adjustment factor (C from paper).}
+\item{tco_obs_adj}{Bootstrap-adjusted observed CO t-statistic.}
+\item{pvalue_adj}{Bootstrap-adjusted two-sided CO p-value.}
+\item{adj_factor}{CO variance adjustment factor (C from paper).}
 \item{median_phi}{AR coefficients from the median bootstrap model.}
+
+If \code{pw_stat = TRUE}, also includes:
+\item{tpw_obs}{Observed t-statistic from Prais-Winsten fit.}
+\item{pvalue_pw}{Bootstrap p-value for PW trend test (two-sided).}
+\item{rho_null}{AR(1) coefficient for PW null model.}
+\item{boot_tstats_pw}{Vector of bootstrap PW t-statistics.}
+
+If both \code{pw_stat = TRUE} and \code{bootadj = TRUE}:
+\item{tpw_obs_adj}{Bootstrap-adjusted observed PW t-statistic.}
+\item{pvalue_pw_adj}{Bootstrap-adjusted two-sided PW p-value.}
+\item{adj_factor_pw}{PW variance adjustment factor.}
+\item{median_rho}{Median AR(1) coefficient from bootstrap.}
 }
 \description{
 High-performance bootstrap hypothesis test for trend in time series.
@@ -76,7 +96,7 @@ The bootstrap procedure:
 \item p-value = proportion of |bootstrap t| >= |observed t|
 }
 
-\strong{COBA Adjustment:}
+\strong{Bootstrap Adjustment:}
 When \code{bootadj = TRUE}, a second-stage bootstrap adjusts the observed
 statistic for variance inflation caused by AR coefficient estimation
 bias. This provides better small-sample significance levels but
@@ -119,6 +139,15 @@ print(result)
 # With COBA adjustment for better small-sample performance
 result_adj <- wbg_boot_fast(x_trend, nb = 199, bootadj = TRUE, seed = 456)
 print(result_adj)
+
+# With both CO and PW statistics
+result_both <- wbg_boot_fast(x_trend, nb = 199, pw_stat = TRUE, seed = 456)
+print(result_both)
+
+# With PW and COBA adjustment
+result_full <- wbg_boot_fast(x_trend, nb = 199, pw_stat = TRUE,
+                              bootadj = TRUE, seed = 456)
+print(result_full)
 }
 
 \dontrun{
@@ -141,6 +170,7 @@ Environmental Statistics}, 2(4), 403-416.
 }
 \seealso{
 \code{\link[=wbg_boot]{wbg_boot()}} for the original R implementation,
-\code{\link[=wbg_boot_flex]{wbg_boot_flex()}} for flexible statistics with COBA,
-\code{\link[=co]{co()}} for Cochrane-Orcutt estimation.
+\code{\link[=wbg_boot_flex]{wbg_boot_flex()}} for flexible statistics with bootstrap adjustment,
+\code{\link[=co]{co()}} for Cochrane-Orcutt estimation,
+\code{\link[=pw_fast]{pw_fast()}} for Prais-Winsten estimation.
 }

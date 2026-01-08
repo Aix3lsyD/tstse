@@ -30,6 +30,7 @@ Suggests:
     lmtest,
     nlme,
     nnfor,
+    prais,
     rugarch,
     sandwich,
     signal,

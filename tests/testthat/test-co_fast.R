@@ -181,3 +181,90 @@ test_that("co_fast is faster than co", {
             label = sprintf("co_fast (%.3fs) should be >2x faster than co (%.3fs)",
                             time_fast, time_co))
 })
+
+# =============================================================================
+# Iterative Cochrane-Orcutt tests
+# =============================================================================
+
+test_that("co_fast iterative returns valid results", {
+  set.seed(808)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  r_single <- co_fast(x, iterate = FALSE)
+  r_iter <- co_fast(x, iterate = TRUE)
+
+  # Both should return valid structures
+  expect_type(r_iter, "list")
+  expect_true(is.finite(r_iter$tco))
+  expect_true(is.finite(r_iter$pvalue))
+  expect_gte(r_iter$z_order, 1)
+  expect_true(abs(r_iter$pvalue) <= 1)
+})
+
+test_that("co_fast iterative matches co iterative", {
+  set.seed(909)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  r1 <- co(x, maxp = 5, method = "burg", iterate = TRUE)
+  r2 <- co_fast(x, maxp = 5, iterate = TRUE)
+
+  # Results should match closely (both use Burg)
+  expect_equal(r2$tco, r1$tco, tolerance = 1e-6)
+  expect_equal(r2$z_order, r1$z_order)
+  expect_equal(r2$z_phi, r1$z_phi, tolerance = 1e-6)
+})
+
+test_that("co_fast single-pass unchanged with iterate=FALSE", {
+  set.seed(1010)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  r_default <- co_fast(x, maxp = 5)
+  r_explicit <- co_fast(x, maxp = 5, iterate = FALSE)
+
+  # Should be identical
+  expect_equal(r_default$tco, r_explicit$tco)
+  expect_equal(r_default$z_phi, r_explicit$z_phi)
+})
+
+test_that("co_fast iterative converges", {
+  set.seed(1111)
+  n <- 150
+  t <- seq_len(n)
+  z <- arima.sim(list(ar = 0.8), n = n)
+  x <- 5 + 0.1 * t + z
+
+  # Iterative should converge and give finite results
+  r <- co_fast(x, maxp = 5, iterate = TRUE, max_iter = 100, tol = 1e-8)
+
+  expect_true(is.finite(r$tco))
+  expect_true(is.finite(r$b1hat))
+  expect_true(all(is.finite(r$z_phi)))  # AR coefficients should be finite
+})
+
+test_that("co iterative returns valid results", {
+  set.seed(1212)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+
+  r_single <- co(x, iterate = FALSE)
+  r_iter <- co(x, iterate = TRUE)
+
+  # Both should return valid structures
+  expect_type(r_iter, "list")
+  expect_true(is.finite(r_iter$tco))
+  expect_gte(r_iter$z_order, 1)
+})
+
+test_that("co and co_fast iterative give similar results for burg", {
+  set.seed(1313)
+  n <- 100
+  t <- seq_len(n)
+  z <- arima.sim(list(ar = 0.7), n = n)
+  x <- 5 + 0.1 * t + z
+
+  r1 <- co(x, maxp = 5, method = "burg", iterate = TRUE)
+  r2 <- co_fast(x, maxp = 5, iterate = TRUE)
+
+  # Results should be very close
+  expect_equal(r2$tco, r1$tco, tolerance = 1e-6)
+  expect_equal(r2$b1hat, r1$b1hat, tolerance = 1e-6)
+})
