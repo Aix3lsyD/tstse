@@ -8,8 +8,7 @@
 //
 // Key functions:
 //   - gen_ar_into(): Zero-copy generation into workspace buffer
-//   - gen_ar_seeded_cpp(): Seeded variant for reproducibility
-//   - gen_ar_cpp(): Primary API for R users
+//   - gen_ar_seeded_cpp(): Seeded AR generation for reproducibility
 //
 // Called by: kernel_wbg_boot.cpp (WBGBootstrapWorker)
 // =============================================================================
@@ -58,44 +57,6 @@ int calc_ar_burnin_cpp(const arma::vec& phi, int n) {
 // =============================================================================
 // Thread-Safe AR Generation using dqrng (xoshiro256+)
 // =============================================================================
-
-// AR Generation with dqrng scalar loop (thread-safe)
-// Uses dqrng's xoshiro256+ with scalar generation.
-// Thread-safe: creates local RNG instance per call.
-// Internal: AR generation with scalar normal loop (not exported to R)
-arma::vec gen_ar_dqrng_scalar(int n, const arma::vec& phi, double vara,
-                               uint64_t rng_seed) {
-  const int p = phi.n_elem;
-
-  // Create thread-local RNG with specific seed
-  dqrng::xoshiro256plus rng(rng_seed);
-  boost::random::normal_distribution<double> norm(0.0, std::sqrt(vara));
-
-  // Calculate adaptive burn-in
-  int burn = (p == 0) ? 0 : calc_ar_burnin_cpp(phi, n);
-  int n_total = n + burn;
-
-  // Generate innovations one at a time
-  arma::vec a(n_total);
-  for (int i = 0; i < n_total; ++i) {
-    a[i] = norm(rng);
-  }
-
-  // Handle AR(0) case
-  if (p == 0) {
-    return a.head(n);
-  }
-
-  // AR recursion
-  for (int t = p; t < n_total; ++t) {
-    for (int j = 0; j < p; ++j) {
-      a[t] += phi[j] * a[t - j - 1];
-    }
-  }
-
-  return a.tail(n);
-}
-
 
 // AR Generation with dqrng Box-Muller (thread-safe, optimized)
 // Uses dqrng's fast uniform generation with Box-Muller transform.
@@ -161,7 +122,9 @@ arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara,
 // =============================================================================
 
 // Helper: fill vector with Box-Muller normals
-static void fill_normals_boxmuller(arma::vec& out, dqrng::xoshiro256plus& rng, double sd) {
+// Template to work with both arma::vec& and subviews (e.g., burn_buf.head(n))
+template<typename VecType>
+static void fill_normals_boxmuller(VecType&& out, dqrng::xoshiro256plus& rng, double sd) {
     const int n = out.n_elem;
     std::uniform_real_distribution<double> unif(0.0, 1.0);
     const double two_pi = 2.0 * M_PI;
@@ -249,6 +212,72 @@ void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi,
 }
 
 
+// =============================================================================
+// Workspace-aware AR generation (ZERO allocations in hot path)
+// Uses pre-allocated burn_buf from workspace instead of allocating per call
+// =============================================================================
+void gen_ar_into_ws(arma::vec& out, const arma::vec& phi,
+                    double sd, int burn, uint64_t rng_seed,
+                    arma::vec& burn_buf) {
+    const int n = out.n_elem;
+    const int p = phi.n_elem;
+
+    // Guard against buffer overflow - MAX_P=20 for stack arrays below
+    constexpr int MAX_P = 20;
+    if (p > MAX_P) {
+        out.zeros();
+        return;
+    }
+
+    dqrng::xoshiro256plus rng(rng_seed);
+
+    if (p == 0) {
+        // AR(0): fill directly with normals
+        fill_normals_boxmuller(out, rng, sd);
+        return;
+    }
+
+    // Use workspace buffer for burn-in innovations (ZERO allocation!)
+    // Fill burn_buf directly using subview (head() returns a reference when used in-place)
+    fill_normals_boxmuller(burn_buf.head(burn), rng, sd);
+
+    // Stack buffer for burn-in (ring buffer, only keep last p values)
+    double prev[MAX_P] = {0};
+
+    // Run burn-in phase using workspace buffer
+    for (int t = 0; t < burn; ++t) {
+        double x = burn_buf[t];
+        for (int j = 0; j < p && j <= t; ++j) {
+            int idx = ((t - 1 - j) % MAX_P + MAX_P) % MAX_P;
+            x += phi[j] * prev[idx];
+        }
+        prev[t % MAX_P] = x;
+    }
+
+    // Extract last p values from ring buffer for initial conditions
+    double burn_tail[MAX_P];
+    for (int i = 0; i < p; ++i) {
+        burn_tail[i] = prev[((burn - p + i) % MAX_P + MAX_P) % MAX_P];
+    }
+
+    // Fill output with innovations
+    fill_normals_boxmuller(out, rng, sd);
+
+    // Apply AR recursion using burn_tail for initial dependencies
+    for (int t = 0; t < n; ++t) {
+        for (int j = 0; j < p; ++j) {
+            int lag = t - 1 - j;
+            if (lag >= 0) {
+                out[t] += phi[j] * out[lag];
+            } else {
+                // Use burn-in tail for negative lags
+                out[t] += phi[j] * burn_tail[p + lag];
+            }
+        }
+    }
+}
+
+
 // Generate AR series directly into provided buffer (avoids copy on return)
 // Public API: computes sd and burn internally (use gen_ar_into_precomputed for hot paths)
 void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed) {
@@ -281,35 +310,5 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
 arma::vec gen_ar_seeded_cpp(int n, const arma::vec& phi, double vara,
                              uint64_t rng_seed) {
   // Use Box-Muller with dqrng - reproducible and thread-safe
-  return gen_ar_dqrng_boxmuller(n, phi, vara, rng_seed);
-}
-
-
-//' Fast AR Generation (C++ implementation)
-//'
-//' Generates AR process using thread-safe dqrng.
-//' If seed is provided, uses it for reproducibility.
-//' If no seed, generates a random seed from R's RNG.
-//'
-//' @param n Integer, series length to generate.
-//' @param phi Numeric vector, AR coefficients.
-//' @param vara Double, innovation variance.
-//' @param seed Integer, random seed for reproducibility (optional).
-//' @return Numeric vector of length n.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-arma::vec gen_ar_cpp(int n, const arma::vec& phi, double vara = 1.0,
-                      Rcpp::Nullable<int> seed = R_NilValue) {
-  uint64_t rng_seed;
-
-  if (seed.isNotNull()) {
-    // Use provided seed
-    rng_seed = static_cast<uint64_t>(Rcpp::as<int>(seed));
-  } else {
-    // Generate random seed from R's RNG (not thread-safe, but this is single-threaded)
-    rng_seed = static_cast<uint64_t>(R::runif(0, 1) * std::numeric_limits<uint32_t>::max());
-  }
-
   return gen_ar_dqrng_boxmuller(n, phi, vara, rng_seed);
 }

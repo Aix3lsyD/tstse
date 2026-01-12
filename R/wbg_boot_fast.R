@@ -18,9 +18,15 @@
 #'   \item{p}{AR order selected for the series under null hypothesis.}
 #'   \item{phi}{AR coefficients for the null model.}
 #'   \item{vara}{Innovation variance for the null model.}
-#'   \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
+#'   \item{pvalue}{Bootstrap p-value for trend test (two-sided, abs-based).}
+#'   \item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs). Use for testing
+#'     positive trend or for quantile-based two-sided test.}
+#'   \item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs). Use for testing
+#'     negative trend or for quantile-based two-sided test.}
 #'   \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 #'   \item{boot_tstats}{Vector of bootstrap t-statistics.}
+#'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.
+#'     Useful for auditability and exact reproduction of individual replicates.}
 #'   \item{n}{Length of input series.}
 #'   \item{nb}{Number of bootstrap replicates used.}
 #'   \item{maxp}{Maximum AR order considered.}
@@ -62,6 +68,18 @@
 #' approximately doubles computation time. The adjustment uses the median
 #' AR coefficients from the first stage, where the "median" is selected
 #' based on phi(1) = 1 - sum(phi) as described in the original paper.
+#' **Note:** COBA requires storing AR fits for all bootstrap replicates,
+#' using approximately `nb * maxp * 8` bytes (e.g., 16 MB for nb=100,000,
+#' maxp=20). For large-scale simulation studies, consider memory constraints.
+#'
+#' **P-value Methods:**
+#' Three p-values are returned. The main `pvalue` uses the absolute value
+#' method `P(|T*| >= |T_obs|)`, which is standard for two-sided bootstrap
+#' tests. Additionally, `pvalue_upper` and `pvalue_lower` provide one-sided
+#' p-values for directional hypotheses or for computing the quantile-based
+#' two-sided p-value: `2 * min(pvalue_upper, pvalue_lower)`. The quantile-based
+#' method can differ from the abs-based method when the bootstrap distribution
+#' is asymmetric.
 #'
 #' **Performance Tuning:**
 #' For optimal parallel performance, you may want to disable BLAS multi-threading
@@ -81,6 +99,14 @@
 #' On macOS with Apple Accelerate, `VECLIB_MAXIMUM_THREADS` is the key variable.
 #' Note: These must be set early in the R session (before BLAS initializes) to
 #' take effect. A session restart may be required after changing them.
+#'
+#' **Reproducibility:**
+#' Results are exactly reproducible given the same `seed`, platform, compiler,
+#' and math library. Minor differences in bootstrap t-statistics may occur
+#' across different platforms (e.g., Windows vs Linux vs macOS) due to
+#' implementation-defined behavior in C++ uniform distribution generation.
+#' This does not affect statistical validity - p-values and conclusions will
+#' be equivalent within sampling variability.
 #'
 #' @references
 #' Woodward, W. A., Bottone, S., and Gray, H. L. (1997). "Improved Tests for
@@ -134,6 +160,9 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   if (!is.numeric(x) || length(x) == 0) {
     stop("`x` must be a non-empty numeric vector", call. = FALSE)
   }
+  if (any(!is.finite(x))) {
+    stop("`x` must contain only finite values (no NA, NaN, or Inf)", call. = FALSE)
+  }
   if (!is.numeric(nb) || length(nb) != 1 || nb < 1) {
     stop("`nb` must be a positive integer", call. = FALSE)
   }
@@ -164,8 +193,11 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     boot_seeds_adj <- as.numeric(sample.int(.Machine$integer.max, nb))
   }
 
-  # Step 1: Compute observed CO t-statistic (C++)
-  tco_obs <- co_tstat_cpp(x, maxp, criterion)
+
+  # Step 1: Compute observed CO t-statistic using kernel implementation
+
+  # Uses same algorithm as bootstrap kernel for bootstrap validity
+  tco_obs <- co_tstat_pure_cpp(x, maxp, criterion)
 
   # Step 2: Fit null model (no trend) using C++ Burg with user's criterion
   # Using burg_aic_select_cpp ensures the same IC is used throughout
@@ -225,10 +257,10 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     # Compute adjustment factor (C = sigma_t_tilde* / sigma_t* from paper)
     adj_factor <- sd(boot_tstats_adj) / sd(boot_tstats)
     tco_obs_adj <- adj_factor * tco_obs
-    pvalue_adj <- mean(abs(boot_tstats) >= abs(tco_obs_adj))
+    pvalue_adj <- (sum(abs(boot_tstats) >= abs(tco_obs_adj)) + 1) / (nb + 1)
 
   } else {
-    # === FAST PATH: No AR fitting in bootstrap (with grain size tuning) ===
+    # === STANDARD PATH: No extra AR refitting for COBA median selection ===
     boot_tstats <- wbg_bootstrap_kernel_grain_cpp(
       n = n,
       phi = phi_null,
@@ -240,8 +272,15 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     )
   }
 
-  # Step 4: Compute p-value (two-sided)
-  pvalue <- mean(abs(boot_tstats) >= abs(tco_obs))
+  # Step 4: Compute p-values with plus-one correction
+  # Per Davison & Hinkley (1997): ensures p > 0 and treats observed as "one of" the samples
+
+  # Two-sided (abs-based): P(|T*| >= |T_obs|)
+  pvalue <- (sum(abs(boot_tstats) >= abs(tco_obs)) + 1) / (nb + 1)
+
+  # One-sided p-values for directional tests or quantile-based two-sided
+  pvalue_upper <- (sum(boot_tstats >= tco_obs) + 1) / (nb + 1)  # P(T* >= T_obs)
+  pvalue_lower <- (sum(boot_tstats <= tco_obs) + 1) / (nb + 1)  # P(T* <= T_obs)
 
   # Build result
   result <- list(
@@ -249,8 +288,11 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     phi         = phi_null,
     vara        = vara_null,
     pvalue      = pvalue,
+    pvalue_upper = pvalue_upper,
+    pvalue_lower = pvalue_lower,
     tco_obs     = tco_obs,
     boot_tstats = boot_tstats,
+    boot_seeds  = boot_seeds,
     n           = n,
     nb          = nb,
     maxp        = maxp,
@@ -286,7 +328,9 @@ print.wbg_boot_fast <- function(x, ...) {
   cat(sprintf("  Innovation variance: %.4f\n", x$vara))
   cat("\nTest Results:\n")
   cat(sprintf("  Observed CO t-stat: %.4f\n", x$tco_obs))
-  cat(sprintf("  Bootstrap p-value: %.4f\n", x$pvalue))
+  cat(sprintf("  Bootstrap p-value (two-sided): %.4f\n", x$pvalue))
+  cat(sprintf("  Upper-tail p-value: %.4f\n", x$pvalue_upper))
+  cat(sprintf("  Lower-tail p-value: %.4f\n", x$pvalue_lower))
 
   # COBA results if present
   if (!is.null(x$pvalue_adj)) {
@@ -327,7 +371,9 @@ summary.wbg_boot_fast <- function(object, ...) {
                else if (object$pvalue < 0.05) "*"
                else if (object$pvalue < 0.1) "."
                else ""
-  cat(sprintf("  p-value = %.4f %s\n", object$pvalue, sig_level))
+  cat(sprintf("  Two-sided p-value (abs-based) = %.4f %s\n", object$pvalue, sig_level))
+  cat(sprintf("  Upper-tail p-value = %.4f\n", object$pvalue_upper))
+  cat(sprintf("  Lower-tail p-value = %.4f\n", object$pvalue_lower))
   cat("  Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\n")
 
   # COBA adjustment results if present

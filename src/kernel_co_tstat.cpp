@@ -87,52 +87,9 @@ static void ols_detrend_ws(const arma::vec& x, CoBootstrapWorkspace& ws) {
 }
 
 
-// Internal: AR transform (pure C++)
-static arma::vec ar_transform_internal(const arma::vec& x, const arma::vec& phi) {
-    const int n = x.n_elem;
-    const int p = phi.n_elem;
-
-    if (p == 0) {
-        return x;
-    }
-
-    arma::vec w(n - p);
-    for (int t = p; t < n; ++t) {
-        double wt = x[t];
-        for (int j = 0; j < p; ++j) {
-            wt -= phi[j] * x[t - j - 1];
-        }
-        w[t - p] = wt;
-    }
-
-    return w;
-}
-
-
-// Internal: CO time transform (pure C++)
-static arma::vec co_time_transform_internal(int n, const arma::vec& phi) {
-    const int p = phi.n_elem;
-
-    if (p == 0) {
-        return arma::linspace(1.0, static_cast<double>(n), n);
-    }
-
-    arma::vec t_co(n - p);
-    for (int idx = 0; idx < n - p; ++idx) {
-        int t = idx + p + 1;  // 1-based time
-        double tco_val = static_cast<double>(t);
-        for (int j = 0; j < p; ++j) {
-            tco_val -= phi[j] * (t - (j + 1));
-        }
-        t_co[idx] = tco_val;
-    }
-
-    return t_co;
-}
-
-
-// Internal: OLS t-statistic for slope (pure C++) - kept for co_full_pure
-static double ols_tstat_internal(const arma::vec& y, const arma::vec& t_idx) {
+// OLS t-statistic for slope (pure C++)
+// Non-static: also called by api_co_tstat.cpp
+double ols_tstat_internal(const arma::vec& y, const arma::vec& t_idx) {
     const int n = y.n_elem;
 
     if (n < 3) {
@@ -305,47 +262,25 @@ double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
 }
 
 
-// Pure C++ CO with full results
-COResult co_full_pure(const arma::vec& x, int maxp, const std::string& criterion) {
-    const int n = x.n_elem;
+// =============================================================================
+// R-facing export wrapper for kernel CO t-statistic
+// Uses same implementation as bootstrap kernel for bootstrap validity
+// =============================================================================
 
-    // Step 1: OLS detrend
-    arma::vec resid = ols_detrend_internal(x);
-
-    // Step 2: Burg AR selection
-    BurgResult ar_fit = burg_aic_select_pure(resid, maxp, criterion);
-
-    // Step 3: AR transform
-    arma::vec x_trans = ar_transform_internal(x, ar_fit.phi);
-
-    // Step 4: CO time transform
-    arma::vec t_co = co_time_transform_internal(n, ar_fit.phi);
-
-    // Step 5: OLS t-stat
-    double tstat = ols_tstat_internal(x_trans, t_co);
-
-    return COResult(tstat, ar_fit.p, ar_fit.phi, ar_fit.vara);
-}
-
-
-// Rcpp export wrappers (for R interface and validation)
-[[deprecated("Internal pure C++ variant - use co_tstat_cpp()")]]
+//' CO t-statistic (kernel implementation)
+//'
+//' Computes Cochrane-Orcutt t-statistic using the kernel implementation.
+//' This function uses the exact same algorithm as the bootstrap kernel,
+//' ensuring bootstrap validity when used in wbg_boot_fast().
+//'
+//' @param x Numeric vector, the time series.
+//' @param maxp Integer, maximum AR order for model selection.
+//' @param criterion String, information criterion: "aic", "aicc", or "bic".
+//' @return Double, Cochrane-Orcutt t-statistic.
+//' @keywords internal
+//' @noRd
 // [[Rcpp::export]]
-double co_tstat_pure_export(const arma::vec& x, int maxp = 5,
-                             std::string criterion = "aic") {
+double co_tstat_pure_cpp(const arma::vec& x, int maxp = 5,
+                          std::string criterion = "aic") {
     return co_tstat_pure(x, maxp, criterion);
-}
-
-[[deprecated("Internal pure C++ variant - use co_full_cpp()")]]
-// [[Rcpp::export]]
-Rcpp::List co_full_pure_export(const arma::vec& x, int maxp = 5,
-                                std::string criterion = "aic") {
-    COResult result = co_full_pure(x, maxp, criterion);
-
-    return Rcpp::List::create(
-        Rcpp::Named("tco") = result.tco,
-        Rcpp::Named("p") = result.p,
-        Rcpp::Named("phi") = result.phi,
-        Rcpp::Named("vara") = result.vara
-    );
 }

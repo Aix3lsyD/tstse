@@ -8,10 +8,66 @@ if test -z "${R_HOME}"; then
   R_HOME=$(R RHOME)
 fi
 
+# Get compiler from R
+CXX=$("${R_HOME}/bin/R" CMD config CXX)
+CXXFLAGS=$("${R_HOME}/bin/R" CMD config CXXFLAGS)
+
+# Function to test if a compiler flag is supported
+check_flag() {
+  flag="$1"
+  echo "int main() { return 0; }" > conftest.cpp
+  if $CXX $CXXFLAGS $flag -c conftest.cpp -o conftest.o 2>/dev/null; then
+    rm -f conftest.cpp conftest.o
+    return 0
+  else
+    rm -f conftest.cpp conftest.o
+    return 1
+  fi
+}
+
+# Test each optimization flag
+EXTRA_CXXFLAGS=""
+EXTRA_LDFLAGS=""
+
+echo "Checking compiler flags..."
+
+if check_flag "-flto"; then
+  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -flto"
+  EXTRA_LDFLAGS="$EXTRA_LDFLAGS -flto"
+  echo "  -flto: yes"
+else
+  echo "  -flto: no"
+fi
+
+if check_flag "-fno-math-errno"; then
+  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -fno-math-errno"
+  echo "  -fno-math-errno: yes"
+else
+  echo "  -fno-math-errno: no"
+fi
+
+if check_flag "-fno-trapping-math"; then
+  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -fno-trapping-math"
+  echo "  -fno-trapping-math: yes"
+else
+  echo "  -fno-trapping-math: no"
+fi
+
+# Trim leading space
+EXTRA_CXXFLAGS=$(echo "$EXTRA_CXXFLAGS" | sed 's/^ *//')
+EXTRA_LDFLAGS=$(echo "$EXTRA_LDFLAGS" | sed 's/^ *//')
+
 # Get the RcppParallel lib path
 TBB_LIB=$("${R_HOME}/bin/Rscript" -e "cat(system.file('lib', package='RcppParallel'))")
 
 # Generate Makevars from template
-sed -e "s|@TBB_LIB@|${TBB_LIB}|g" src/Makevars.in > src/Makevars
+sed -e "s|@TBB_LIB@|${TBB_LIB}|g" \
+    -e "s|@EXTRA_CXXFLAGS@|${EXTRA_CXXFLAGS}|g" \
+    -e "s|@EXTRA_LDFLAGS@|${EXTRA_LDFLAGS}|g" \
+    src/Makevars.in > src/Makevars
 
-echo "Configured src/Makevars with TBB_LIB=${TBB_LIB}"
+echo ""
+echo "Configured src/Makevars with:"
+echo "  TBB_LIB=${TBB_LIB}"
+echo "  EXTRA_CXXFLAGS=${EXTRA_CXXFLAGS}"
+echo "  EXTRA_LDFLAGS=${EXTRA_LDFLAGS}"

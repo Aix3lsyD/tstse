@@ -203,135 +203,127 @@ table_garch_gt <- function(results,
   display_df$CoefSig <- paste0(df$n_sig, "/", df$n_coef)
   display_df$CoefSig_pass <- df$n_sig == df$n_coef
 
-  tbl <- display_df |>
-    gt::gt() |>
-    gt::tab_header(
-      title = title,
-      subtitle = paste0("Distribution: ", results$distribution)
-    ) |>
-    gt::cols_hide(columns = c(
-      ARCH, GARCH, WLB1, WLB2, WLB3, Nyblom, Nyblom_crit,
-      Nyblom_pass, SignBias, n_sig, n_coef, CoefSig_pass
-    )) |>
-    gt::cols_label(
-      Model = "Model",
-      AIC = "AIC",
-      AICC = "AICc",
-      BIC = "BIC",
-      WLB1_fmt = "Lag 1",
-      WLB2_fmt = "Lag 2",
-      WLB3_fmt = "Lag 3",
-      Nyblom_fmt = "Nyblom",
-      SignBias_fmt = "Sign Bias",
-      CoefSig = "Coef"
-    ) |>
-    gt::tab_spanner(label = "Info Criteria", columns = c(AIC, AICC, BIC)) |>
-    gt::tab_spanner(label = "Weighted Ljung-Box", columns = c(WLB1_fmt, WLB2_fmt, WLB3_fmt)) |>
-    gt::tab_spanner(label = "Diagnostics", columns = c(Nyblom_fmt, SignBias_fmt)) |>
-    gt::fmt_number(columns = c(AIC, AICC, BIC), decimals = 2) |>
-    gt::cols_align(align = "right", columns = c(AIC, AICC, BIC, WLB1_fmt, WLB2_fmt, WLB3_fmt, Nyblom_fmt, SignBias_fmt)) |>
-    gt::cols_align(align = "center", columns = CoefSig) |>
-    gt::cols_align(align = "left", columns = Model) |>
-    gt::tab_style(style = gt::cell_text(weight = "bold"), locations = gt::cells_body(columns = Model))
+  tbl <- gt::gt(display_df)
+  tbl <- gt::tab_header(tbl,
+    title = title,
+    subtitle = paste0("Distribution: ", results$distribution)
+  )
+  tbl <- gt::cols_hide(tbl, columns = c(
+    ARCH, GARCH, WLB1, WLB2, WLB3, Nyblom, Nyblom_crit,
+    Nyblom_pass, SignBias, n_sig, n_coef, CoefSig_pass
+  ))
+  tbl <- gt::cols_label(tbl,
+    Model = "Model",
+    AIC = "AIC",
+    AICC = "AICc",
+    BIC = "BIC",
+    WLB1_fmt = "Lag 1",
+    WLB2_fmt = "Lag 2",
+    WLB3_fmt = "Lag 3",
+    Nyblom_fmt = "Nyblom",
+    SignBias_fmt = "Sign Bias",
+    CoefSig = "Coef"
+  )
+  tbl <- gt::tab_spanner(tbl, label = "Info Criteria", columns = c(AIC, AICC, BIC))
+  tbl <- gt::tab_spanner(tbl, label = "Weighted Ljung-Box", columns = c(WLB1_fmt, WLB2_fmt, WLB3_fmt))
+  tbl <- gt::tab_spanner(tbl, label = "Diagnostics", columns = c(Nyblom_fmt, SignBias_fmt))
+  tbl <- gt::fmt_number(tbl, columns = c(AIC, AICC, BIC), decimals = 2)
+  tbl <- gt::cols_align(tbl, align = "right", columns = c(AIC, AICC, BIC, WLB1_fmt, WLB2_fmt, WLB3_fmt, Nyblom_fmt, SignBias_fmt))
+  tbl <- gt::cols_align(tbl, align = "center", columns = CoefSig)
+  tbl <- gt::cols_align(tbl, align = "left", columns = Model)
+  tbl <- gt::tab_style(tbl, style = gt::cell_text(weight = "bold"), locations = gt::cells_body(columns = Model))
 
   # Hide WLB columns if all NA (WeightedPortTest not installed)
   if (!has_wlb) {
-    tbl <- tbl |>
-      gt::cols_hide(columns = c(WLB1_fmt, WLB2_fmt, WLB3_fmt))
+    tbl <- gt::cols_hide(tbl, columns = c(WLB1_fmt, WLB2_fmt, WLB3_fmt))
   }
 
   # Highlight best IC (green bold) - with NA handling
-  tbl <- tbl |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = AIC, rows = !is.na(AIC) & AIC == min(AIC, na.rm = TRUE))
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = AICC, rows = !is.na(AICC) & AICC == min(AICC, na.rm = TRUE))
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = BIC, rows = !is.na(BIC) & BIC == min(BIC, na.rm = TRUE))
-    )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = AIC, rows = !is.na(AIC) & AIC == min(AIC, na.rm = TRUE))
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = AICC, rows = !is.na(AICC) & AICC == min(AICC, na.rm = TRUE))
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = BIC, rows = !is.na(BIC) & BIC == min(BIC, na.rm = TRUE))
+  )
 
   # Highlight best WLB p-values (green bold) and failures (red) - only if WLB available
   if (has_wlb) {
-    tbl <- tbl |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_best, weight = "bold"),
-        locations = gt::cells_body(columns = WLB1_fmt, rows = !is.na(WLB1) & WLB1 == max(WLB1, na.rm = TRUE))
-      ) |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_best, weight = "bold"),
-        locations = gt::cells_body(columns = WLB2_fmt, rows = !is.na(WLB2) & WLB2 == max(WLB2, na.rm = TRUE))
-      ) |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_best, weight = "bold"),
-        locations = gt::cells_body(columns = WLB3_fmt, rows = !is.na(WLB3) & WLB3 == max(WLB3, na.rm = TRUE))
-      ) |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_fail),
-        locations = gt::cells_body(columns = WLB1_fmt, rows = !is.na(WLB1) & WLB1 < 0.05)
-      ) |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_fail),
-        locations = gt::cells_body(columns = WLB2_fmt, rows = !is.na(WLB2) & WLB2 < 0.05)
-      ) |>
-      gt::tab_style(
-        style = gt::cell_text(color = color_fail),
-        locations = gt::cells_body(columns = WLB3_fmt, rows = !is.na(WLB3) & WLB3 < 0.05)
-      )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_best, weight = "bold"),
+      locations = gt::cells_body(columns = WLB1_fmt, rows = !is.na(WLB1) & WLB1 == max(WLB1, na.rm = TRUE))
+    )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_best, weight = "bold"),
+      locations = gt::cells_body(columns = WLB2_fmt, rows = !is.na(WLB2) & WLB2 == max(WLB2, na.rm = TRUE))
+    )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_best, weight = "bold"),
+      locations = gt::cells_body(columns = WLB3_fmt, rows = !is.na(WLB3) & WLB3 == max(WLB3, na.rm = TRUE))
+    )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_fail),
+      locations = gt::cells_body(columns = WLB1_fmt, rows = !is.na(WLB1) & WLB1 < 0.05)
+    )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_fail),
+      locations = gt::cells_body(columns = WLB2_fmt, rows = !is.na(WLB2) & WLB2 < 0.05)
+    )
+    tbl <- gt::tab_style(tbl,
+      style = gt::cell_text(color = color_fail),
+      locations = gt::cells_body(columns = WLB3_fmt, rows = !is.na(WLB3) & WLB3 < 0.05)
+    )
   }
 
   # Nyblom: lower is better, red if unstable - with NA handling
-  tbl <- tbl |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = Nyblom_fmt, rows = !is.na(Nyblom) & Nyblom == min(Nyblom, na.rm = TRUE))
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_fail),
-      locations = gt::cells_body(columns = Nyblom_fmt, rows = !is.na(Nyblom) & !is.na(Nyblom_crit) & Nyblom >= Nyblom_crit)
-    )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = Nyblom_fmt, rows = !is.na(Nyblom) & Nyblom == min(Nyblom, na.rm = TRUE))
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_fail),
+    locations = gt::cells_body(columns = Nyblom_fmt, rows = !is.na(Nyblom) & !is.na(Nyblom_crit) & Nyblom >= Nyblom_crit)
+  )
 
   # Sign Bias: higher p-value is better - with NA handling
-  tbl <- tbl |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = SignBias_fmt, rows = !is.na(SignBias) & SignBias == max(SignBias, na.rm = TRUE))
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_fail),
-      locations = gt::cells_body(columns = SignBias_fmt, rows = !is.na(SignBias) & SignBias < 0.05)
-    )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = SignBias_fmt, rows = !is.na(SignBias) & SignBias == max(SignBias, na.rm = TRUE))
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_fail),
+    locations = gt::cells_body(columns = SignBias_fmt, rows = !is.na(SignBias) & SignBias < 0.05)
+  )
 
   # Coefficient significance
-  tbl <- tbl |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_best, weight = "bold"),
-      locations = gt::cells_body(columns = CoefSig, rows = CoefSig_pass == TRUE)
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_fail),
-      locations = gt::cells_body(columns = CoefSig, rows = CoefSig_pass == FALSE)
-    )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_best, weight = "bold"),
+    locations = gt::cells_body(columns = CoefSig, rows = CoefSig_pass == TRUE)
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_fail),
+    locations = gt::cells_body(columns = CoefSig, rows = CoefSig_pass == FALSE)
+  )
 
   # Footnotes
-  tbl <- tbl |>
-    gt::tab_source_note("Green = best/pass. Red = fail. Weighted LB lags are model-dependent.") |>
-    gt::tab_source_note(gt::html("Nyblom: H<sub>0</sub> = parameters stable. Green = stable (&lt; 5% critical value).")) |>
-    gt::tab_source_note(gt::html("Sign Bias: H<sub>0</sub> = symmetric effects. If rejected, consider EGARCH/GJR-GARCH.")) |>
-    gt::tab_options(
-      table.font.size = gt::px(12),
-      heading.title.font.size = gt::px(16),
-      heading.subtitle.font.size = gt::px(13),
-      column_labels.font.size = gt::px(11),
-      column_labels.padding = gt::px(8),
-      data_row.padding = gt::px(7),
-      source_notes.font.size = gt::px(10),
-      table.width = gt::pct(100)
-    )
+  tbl <- gt::tab_source_note(tbl, "Green = best/pass. Red = fail. Weighted LB lags are model-dependent.")
+  tbl <- gt::tab_source_note(tbl, gt::html("Nyblom: H<sub>0</sub> = parameters stable. Green = stable (&lt; 5% critical value)."))
+  tbl <- gt::tab_source_note(tbl, gt::html("Sign Bias: H<sub>0</sub> = symmetric effects. If rejected, consider EGARCH/GJR-GARCH."))
+  tbl <- gt::tab_options(tbl,
+    table.font.size = gt::px(12),
+    heading.title.font.size = gt::px(16),
+    heading.subtitle.font.size = gt::px(13),
+    column_labels.font.size = gt::px(11),
+    column_labels.padding = gt::px(8),
+    data_row.padding = gt::px(7),
+    source_notes.font.size = gt::px(10),
+    table.width = gt::pct(100)
+  )
 
   tbl
 }
@@ -628,46 +620,45 @@ table_coef_gt <- function(fit,
     else ""
   })
 
-  tbl <- df |>
-    gt::gt() |>
-    gt::tab_header(
-      title = title,
-      subtitle = paste0("Distribution: ", fit@model$modeldesc$distribution)
-    ) |>
-    gt::cols_hide(columns = c(p_val)) |>
-    gt::cols_label(
-      Parameter = "Parameter",
-      Estimate = "Estimate",
-      Std_Error = "Std. Error",
-      t_value = "t value",
-      p_display = "p-value",
-      Sig = ""
-    ) |>
-    gt::fmt_number(columns = c(Estimate, Std_Error, t_value), decimals = 4) |>
-    gt::cols_align(align = "left", columns = Parameter) |>
-    gt::cols_align(align = "right", columns = c(Estimate, Std_Error, t_value, p_display)) |>
-    gt::cols_align(align = "center", columns = Sig) |>
-    gt::tab_style(
-      style = gt::cell_text(weight = "bold"),
-      locations = gt::cells_body(columns = Parameter)
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_sig, weight = "bold"),
-      locations = gt::cells_body(columns = p_display, rows = !is.na(p_val) & p_val < 0.05)
-    ) |>
-    gt::tab_style(
-      style = gt::cell_text(color = color_nonsig),
-      locations = gt::cells_body(columns = p_display, rows = !is.na(p_val) & p_val >= 0.05)
-    ) |>
-    gt::tab_source_note("Significance: *** p < 0.001, ** p < 0.01, * p < 0.05, . p < 0.1") |>
-    gt::tab_options(
-      table.font.size = gt::px(12),
-      heading.title.font.size = gt::px(15),
-      heading.subtitle.font.size = gt::px(12),
-      column_labels.padding = gt::px(8),
-      data_row.padding = gt::px(6),
-      source_notes.font.size = gt::px(10)
-    )
+  tbl <- gt::gt(df)
+  tbl <- gt::tab_header(tbl,
+    title = title,
+    subtitle = paste0("Distribution: ", fit@model$modeldesc$distribution)
+  )
+  tbl <- gt::cols_hide(tbl, columns = c(p_val))
+  tbl <- gt::cols_label(tbl,
+    Parameter = "Parameter",
+    Estimate = "Estimate",
+    Std_Error = "Std. Error",
+    t_value = "t value",
+    p_display = "p-value",
+    Sig = ""
+  )
+  tbl <- gt::fmt_number(tbl, columns = c(Estimate, Std_Error, t_value), decimals = 4)
+  tbl <- gt::cols_align(tbl, align = "left", columns = Parameter)
+  tbl <- gt::cols_align(tbl, align = "right", columns = c(Estimate, Std_Error, t_value, p_display))
+  tbl <- gt::cols_align(tbl, align = "center", columns = Sig)
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_body(columns = Parameter)
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_sig, weight = "bold"),
+    locations = gt::cells_body(columns = p_display, rows = !is.na(p_val) & p_val < 0.05)
+  )
+  tbl <- gt::tab_style(tbl,
+    style = gt::cell_text(color = color_nonsig),
+    locations = gt::cells_body(columns = p_display, rows = !is.na(p_val) & p_val >= 0.05)
+  )
+  tbl <- gt::tab_source_note(tbl, "Significance: *** p < 0.001, ** p < 0.01, * p < 0.05, . p < 0.1")
+  tbl <- gt::tab_options(tbl,
+    table.font.size = gt::px(12),
+    heading.title.font.size = gt::px(15),
+    heading.subtitle.font.size = gt::px(12),
+    column_labels.padding = gt::px(8),
+    data_row.padding = gt::px(6),
+    source_notes.font.size = gt::px(10)
+  )
 
   tbl
 }

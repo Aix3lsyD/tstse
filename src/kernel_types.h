@@ -26,18 +26,6 @@ struct BurgResult {
         : phi(phi_), vara(vara_), p(p_), ic(ic_) {}
 };
 
-// Result from Cochrane-Orcutt procedure
-struct COResult {
-    double tco;         // CO t-statistic
-    int p;              // AR order selected
-    arma::vec phi;      // AR coefficients
-    double vara;        // Residual variance
-
-    COResult() : tco(0.0), p(0), vara(0.0) {}
-    COResult(double tco_, int p_, arma::vec phi_, double vara_)
-        : tco(tco_), p(p_), phi(phi_), vara(vara_) {}
-};
-
 // Result from OLS regression
 struct OLSResult {
     arma::vec residuals;
@@ -87,10 +75,15 @@ struct CoBootstrapWorkspace {
     arma::vec best_phi; // Best AR coefficients (avoids allocation per IC improvement)
     int best_p;         // Order of best model (for reading best_phi)
 
+    // AR generation workspace (burn-in buffer)
+    // Pre-allocated to avoid heap allocation per bootstrap replicate
+    arma::vec burn_buf;
+
     CoBootstrapWorkspace() : best_p(0) {}
 
     // Resize all vectors for given n and maxp
-    void resize(int n, int maxp) {
+    // max_burn: maximum burn-in length (default 2000, matches calc_ar_burnin_cpp cap)
+    void resize(int n, int maxp, int max_burn = 2000) {
         x_buf.set_size(n);
         resid.set_size(n);
         xc.set_size(n);
@@ -99,6 +92,7 @@ struct CoBootstrapWorkspace {
         a_curr.set_size(maxp);
         a_prev.set_size(maxp);
         best_phi.set_size(maxp);
+        burn_buf.set_size(max_burn);
         best_p = 0;
     }
 };

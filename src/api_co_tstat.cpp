@@ -9,7 +9,6 @@
 // Exports:
 //   - co_tstat_cpp(): Primary CO t-statistic API
 //   - co_full_cpp(): Full results including AR coefficients
-//   - ols_tstat_cpp(): [DEPRECATED] Internal OLS t-stat helper
 // =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
@@ -22,48 +21,8 @@ Rcpp::List burg_aic_select_cpp(const arma::vec& x, int maxp, std::string criteri
 arma::vec ar_transform_cpp(const arma::vec& x, const arma::vec& phi);
 arma::vec co_time_transform_cpp(int n, const arma::vec& phi);
 
-
-// OLS t-statistic for slope (C++ implementation)
-// Computes t-statistic for slope coefficient from simple linear regression.
-// Internal helper: not exported to R
-double ols_tstat_cpp(const arma::vec& y, const arma::vec& t_idx) {
-  const int n = y.n_elem;
-
-  if (n < 3) {
-    return 0.0;  // Not enough data
-  }
-
-  // Means
-  const double y_mean = arma::mean(y);
-  const double t_mean = arma::mean(t_idx);
-
-  // Centered vectors
-  arma::vec y_c = y - y_mean;
-  arma::vec t_c = t_idx - t_mean;
-
-  // OLS slope
-  const double ss_t = arma::dot(t_c, t_c);
-  if (ss_t < 1e-15) {
-    return 0.0;  // No variation in predictor
-  }
-  const double b_hat = arma::dot(y_c, t_c) / ss_t;
-
-  // Intercept
-  const double a_hat = y_mean - b_hat * t_mean;
-
-  // Residuals and MSE
-  arma::vec resid = y - a_hat - b_hat * t_idx;
-  const double mse = arma::dot(resid, resid) / (n - 2);
-
-  // Standard error of slope
-  const double se_b = std::sqrt(mse / ss_t);
-
-  if (se_b < 1e-15) {
-    return 0.0;
-  }
-
-  return b_hat / se_b;
-}
+// Forward declaration of kernel function (defined in kernel_co_tstat.cpp)
+double ols_tstat_internal(const arma::vec& y, const arma::vec& t_idx);
 
 
 //' Cochrane-Orcutt t-statistic (C++ implementation)
@@ -101,7 +60,7 @@ double co_tstat_cpp(const arma::vec& x, int maxp = 5,
   arma::vec t_co = co_time_transform_cpp(n, phi);
 
   // Step 5: OLS on transformed data
-  double tstat = ols_tstat_cpp(x_trans, t_co);
+  double tstat = ols_tstat_internal(x_trans, t_co);
 
   return tstat;
 }
@@ -139,7 +98,7 @@ Rcpp::List co_full_cpp(const arma::vec& x, int maxp = 5,
   arma::vec t_co = co_time_transform_cpp(n, phi);
 
   // Step 5: OLS on transformed data
-  double tstat = ols_tstat_cpp(x_trans, t_co);
+  double tstat = ols_tstat_internal(x_trans, t_co);
 
   return Rcpp::List::create(
     Rcpp::Named("tco") = tstat,

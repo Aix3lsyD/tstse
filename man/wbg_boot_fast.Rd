@@ -34,9 +34,15 @@ A list of class "wbg_boot_fast" containing:
 \item{p}{AR order selected for the series under null hypothesis.}
 \item{phi}{AR coefficients for the null model.}
 \item{vara}{Innovation variance for the null model.}
-\item{pvalue}{Bootstrap p-value for trend test (two-sided).}
+\item{pvalue}{Bootstrap p-value for trend test (two-sided, abs-based).}
+\item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs). Use for testing
+positive trend or for quantile-based two-sided test.}
+\item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs). Use for testing
+negative trend or for quantile-based two-sided test.}
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 \item{boot_tstats}{Vector of bootstrap t-statistics.}
+\item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.
+Useful for auditability and exact reproduction of individual replicates.}
 \item{n}{Length of input series.}
 \item{nb}{Number of bootstrap replicates used.}
 \item{maxp}{Maximum AR order considered.}
@@ -83,6 +89,18 @@ bias. This provides better small-sample significance levels but
 approximately doubles computation time. The adjustment uses the median
 AR coefficients from the first stage, where the "median" is selected
 based on phi(1) = 1 - sum(phi) as described in the original paper.
+\strong{Note:} COBA requires storing AR fits for all bootstrap replicates,
+using approximately \code{nb * maxp * 8} bytes (e.g., 16 MB for nb=100,000,
+maxp=20). For large-scale simulation studies, consider memory constraints.
+
+\strong{P-value Methods:}
+Three p-values are returned. The main \code{pvalue} uses the absolute value
+method \verb{P(|T*| >= |T_obs|)}, which is standard for two-sided bootstrap
+tests. Additionally, \code{pvalue_upper} and \code{pvalue_lower} provide one-sided
+p-values for directional hypotheses or for computing the quantile-based
+two-sided p-value: \code{2 * min(pvalue_upper, pvalue_lower)}. The quantile-based
+method can differ from the abs-based method when the bootstrap distribution
+is asymmetric.
 
 \strong{Performance Tuning:}
 For optimal parallel performance, you may want to disable BLAS multi-threading
@@ -101,6 +119,14 @@ variables \strong{before loading any packages} that use BLAS:
 On macOS with Apple Accelerate, \code{VECLIB_MAXIMUM_THREADS} is the key variable.
 Note: These must be set early in the R session (before BLAS initializes) to
 take effect. A session restart may be required after changing them.
+
+\strong{Reproducibility:}
+Results are exactly reproducible given the same \code{seed}, platform, compiler,
+and math library. Minor differences in bootstrap t-statistics may occur
+across different platforms (e.g., Windows vs Linux vs macOS) due to
+implementation-defined behavior in C++ uniform distribution generation.
+This does not affect statistical validity - p-values and conclusions will
+be equivalent within sampling variability.
 }
 \examples{
 \donttest{

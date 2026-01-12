@@ -6,13 +6,15 @@
 // This is the main entry point for wbg_boot_fast(). Every microsecond matters.
 // Uses RcppParallel (TBB) to run bootstrap iterations in parallel.
 //
-// Call chain: wbg_boot_fast.R -> wbg_bootstrap_kernel_cpp()
+// Call chain: wbg_boot_fast.R -> wbg_bootstrap_kernel_grain_cpp()
 //             -> WBGBootstrapWorker::operator()
-//                 -> gen_ar_into() + co_tstat_ws()
+//                 -> gen_ar_into_ws() + co_tstat_ws()
+//
+// ZERO allocations per bootstrap iteration (all workspace pre-allocated).
 //
 // Key exports:
-//   - wbg_bootstrap_kernel_cpp(): Main parallel bootstrap
-//   - wbg_bootstrap_coba_kernel_cpp(): COBA adjustment variant
+//   - wbg_bootstrap_kernel_grain_cpp(): Main parallel bootstrap
+//   - wbg_bootstrap_coba_kernel_grain_cpp(): COBA adjustment variant
 // =============================================================================
 // [[Rcpp::depends(RcppArmadillo, RcppParallel, dqrng, BH)]]
 
@@ -21,6 +23,7 @@
 #include "kernel_types.h"
 #include <vector>
 #include <cmath>
+#include <algorithm>  // for std::fill
 
 using namespace Rcpp;
 
@@ -28,6 +31,7 @@ using namespace Rcpp;
 arma::vec gen_ar_dqrng_boxmuller(int n, const arma::vec& phi, double vara, uint64_t rng_seed);
 void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng_seed);
 void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed);
+void gen_ar_into_ws(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed, arma::vec& burn_buf);
 int calc_ar_burnin_cpp(const arma::vec& phi, int n);
 double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion, int min_p = 0);
@@ -85,8 +89,8 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
         }
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series using precomputed sd and burn (no sqrt/burnin calc per iteration)
-            gen_ar_into_precomputed(ws.x_buf, phi, sd, burn, seeds[b]);
+            // Generate AR series using workspace buffer (ZERO allocations!)
+            gen_ar_into_ws(ws.x_buf, phi, sd, burn, seeds[b], ws.burn_buf);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
             results[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
@@ -101,46 +105,7 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
 
 //' WBG Bootstrap Kernel (C++ Implementation)
 //'
-//' Runs the bootstrap loop in parallel using TBB.
-//' Each iteration generates an AR series under the null hypothesis
-//' (no trend) and computes the Cochrane-Orcutt t-statistic.
-//'
-//' @param n Integer, series length.
-//' @param phi Numeric vector, AR coefficients from null model.
-//' @param vara Double, innovation variance from null model.
-//' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
-//' @param maxp Integer, maximum AR order for CO test.
-//' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
-//' @return Numeric vector of bootstrap t-statistics.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-Rcpp::NumericVector wbg_bootstrap_kernel_cpp(
-    int n,
-    const arma::vec& phi,
-    double vara,
-    const std::vector<uint64_t>& seeds,
-    int maxp = 5,
-    std::string criterion = "aic"
-) {
-    const int nb = seeds.size();
-    Rcpp::NumericVector results(nb);
-
-    // Convert criterion string to enum ONCE (not in hot path)
-    CriterionType ic_type = criterion_from_string(criterion);
-
-    // Create worker and run in parallel
-    WBGBootstrapWorker worker(n, phi, vara, maxp, ic_type, seeds, results);
-    RcppParallel::parallelFor(0, nb, worker);
-
-    return results;
-}
-
-
-//' WBG Bootstrap Kernel with Grain Size Control
-//'
-//' Same as wbg_bootstrap_kernel_cpp but with explicit grain size
-//' for performance tuning.
+//' Runs the bootstrap loop in parallel using TBB with configurable grain size.
 //'
 //' @param n Integer, series length.
 //' @param phi Numeric vector, AR coefficients from null model.
@@ -162,6 +127,14 @@ Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(
     std::string criterion = "aic",
     std::size_t grain_size = 1
 ) {
+    // Validate AR order constraints (C++ buffer limit is MAX_P=20)
+    if (maxp > 20) {
+        Rcpp::stop("maxp must be <= 20 (C++ buffer limit)");
+    }
+    if (static_cast<int>(phi.n_elem) > 20) {
+        Rcpp::stop("AR order p must be <= 20 (C++ buffer limit)");
+    }
+
     const int nb = seeds.size();
     Rcpp::NumericVector results(nb);
 
@@ -228,8 +201,8 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
         }
 
         for (std::size_t b = begin; b < end; ++b) {
-            // Generate AR series using precomputed sd and burn (no sqrt/burnin calc per iteration)
-            gen_ar_into_precomputed(ws.x_buf, phi, sd, burn, seeds[b]);
+            // Generate AR series using workspace buffer (ZERO allocations!)
+            gen_ar_into_ws(ws.x_buf, phi, sd, burn, seeds[b], ws.burn_buf);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
             tstats[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
@@ -255,62 +228,9 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 // COBA Bootstrap Kernel (for bootstrap adjustment)
 // =============================================================================
 
-//' WBG Bootstrap Kernel with COBA (C++ Implementation)
+//' WBG Bootstrap COBA Kernel (C++ Implementation)
 //'
-//' Runs the first-stage bootstrap for COBA adjustment.
-//' Each iteration generates an AR series, computes the CO t-statistic,
-//' AND fits an AR model to get phi coefficients for median model selection.
-//'
-//' @param n Integer, series length.
-//' @param phi Numeric vector, AR coefficients from null model.
-//' @param vara Double, innovation variance from null model.
-//' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
-//' @param maxp Integer, maximum AR order for CO test and AR fitting.
-//' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
-//' @return List with:
-//'   - tstats: Numeric vector of bootstrap t-statistics
-//'   - phi1_values: Numeric vector of phi(1) = 1 - sum(phi) for each bootstrap
-//'   - phi_matrix: Matrix (nb x maxp) of AR coefficients (zero-padded)
-//'   - orders: Integer vector of selected AR orders
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-Rcpp::List wbg_bootstrap_coba_kernel_cpp(
-    int n,
-    const arma::vec& phi,
-    double vara,
-    const std::vector<uint64_t>& seeds,
-    int maxp = 5,
-    std::string criterion = "aic"
-) {
-    const int nb = seeds.size();
-
-    // Pre-allocate outputs
-    Rcpp::NumericVector tstats(nb);
-    Rcpp::NumericVector phi1_values(nb);
-    Rcpp::NumericMatrix phi_matrix(nb, maxp);  // Zero-initialized
-    Rcpp::IntegerVector orders(nb);
-
-    // Convert criterion string to enum ONCE
-    CriterionType ic_type = criterion_from_string(criterion);
-
-    // Create worker and run in parallel
-    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, ic_type, seeds,
-                                   tstats, phi1_values, phi_matrix, orders);
-    RcppParallel::parallelFor(0, nb, worker);
-
-    return Rcpp::List::create(
-        Rcpp::Named("tstats") = tstats,
-        Rcpp::Named("phi1_values") = phi1_values,
-        Rcpp::Named("phi_matrix") = phi_matrix,
-        Rcpp::Named("orders") = orders
-    );
-}
-
-
-//' WBG Bootstrap COBA Kernel with Grain Size Control
-//'
-//' Same as wbg_bootstrap_coba_kernel_cpp but with explicit grain size.
+//' Runs the first-stage bootstrap for COBA adjustment with configurable grain size.
 //'
 //' @param n Integer, series length.
 //' @param phi Numeric vector, AR coefficients from null model.
@@ -332,12 +252,21 @@ Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(
     std::string criterion = "aic",
     std::size_t grain_size = 1
 ) {
+    // Validate AR order constraints (C++ buffer limit is MAX_P=20)
+    if (maxp > 20) {
+        Rcpp::stop("maxp must be <= 20 (C++ buffer limit)");
+    }
+    if (static_cast<int>(phi.n_elem) > 20) {
+        Rcpp::stop("AR order p must be <= 20 (C++ buffer limit)");
+    }
+
     const int nb = seeds.size();
 
     // Pre-allocate outputs
     Rcpp::NumericVector tstats(nb);
     Rcpp::NumericVector phi1_values(nb);
     Rcpp::NumericMatrix phi_matrix(nb, maxp);
+    std::fill(phi_matrix.begin(), phi_matrix.end(), 0.0);  // Explicit zero-init
     Rcpp::IntegerVector orders(nb);
 
     // Convert criterion string to enum ONCE

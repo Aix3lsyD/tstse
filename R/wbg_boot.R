@@ -137,9 +137,9 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     boot_tstats <- vapply(seq_len(nb), boot_fn, numeric(1))
   }
 
-  # Step 4: Compute p-value
-  # Proportion of bootstrap |t| >= observed |t|
-  pvalue <- mean(abs(boot_tstats) >= abs(tco_obs))
+  # Step 4: Compute p-value with plus-one correction
+  # Per Davison & Hinkley (1997): ensures p > 0 and treats observed as "one of" the samples
+  pvalue <- (sum(abs(boot_tstats) >= abs(tco_obs)) + 1) / (nb + 1)
 
   list(
     p           = p_null,

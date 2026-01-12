@@ -75,18 +75,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// burg_fit_full_cpp
-Rcpp::List burg_fit_full_cpp(const arma::vec& x, int p);
-RcppExport SEXP _tstse_burg_fit_full_cpp(SEXP xSEXP, SEXP pSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
-    Rcpp::traits::input_parameter< int >::type p(pSEXP);
-    rcpp_result_gen = Rcpp::wrap(burg_fit_full_cpp(x, p));
-    return rcpp_result_gen;
-END_RCPP
-}
 // co_tstat_cpp
 double co_tstat_cpp(const arma::vec& x, int maxp, std::string criterion);
 RcppExport SEXP _tstse_co_tstat_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
@@ -124,53 +112,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// ols_detrend_full_cpp
-Rcpp::List ols_detrend_full_cpp(const arma::vec& x);
-RcppExport SEXP _tstse_ols_detrend_full_cpp(SEXP xSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(ols_detrend_full_cpp(x));
-    return rcpp_result_gen;
-END_RCPP
-}
-// burg_aic_select_pure_export
-Rcpp::List burg_aic_select_pure_export(const arma::vec& x, int maxp, std::string criterion);
-RcppExport SEXP _tstse_burg_aic_select_pure_export(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
+// co_tstat_pure_cpp
+double co_tstat_pure_cpp(const arma::vec& x, int maxp, std::string criterion);
+RcppExport SEXP _tstse_co_tstat_pure_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
     Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(burg_aic_select_pure_export(x, maxp, criterion));
-    return rcpp_result_gen;
-END_RCPP
-}
-// co_tstat_pure_export
-double co_tstat_pure_export(const arma::vec& x, int maxp, std::string criterion);
-RcppExport SEXP _tstse_co_tstat_pure_export(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(co_tstat_pure_export(x, maxp, criterion));
-    return rcpp_result_gen;
-END_RCPP
-}
-// co_full_pure_export
-Rcpp::List co_full_pure_export(const arma::vec& x, int maxp, std::string criterion);
-RcppExport SEXP _tstse_co_full_pure_export(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(co_full_pure_export(x, maxp, criterion));
+    rcpp_result_gen = Rcpp::wrap(co_tstat_pure_cpp(x, maxp, criterion));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -185,36 +136,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
     Rcpp::traits::input_parameter< uint64_t >::type rng_seed(rng_seedSEXP);
     rcpp_result_gen = Rcpp::wrap(gen_ar_seeded_cpp(n, phi, vara, rng_seed));
-    return rcpp_result_gen;
-END_RCPP
-}
-// gen_ar_cpp
-arma::vec gen_ar_cpp(int n, const arma::vec& phi, double vara, Rcpp::Nullable<int> seed);
-RcppExport SEXP _tstse_gen_ar_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<int> >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(gen_ar_cpp(n, phi, vara, seed));
-    return rcpp_result_gen;
-END_RCPP
-}
-// wbg_bootstrap_kernel_cpp
-Rcpp::NumericVector wbg_bootstrap_kernel_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion);
-RcppExport SEXP _tstse_wbg_bootstrap_kernel_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_kernel_cpp(n, phi, vara, seeds, maxp, criterion));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -235,22 +156,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// wbg_bootstrap_coba_kernel_cpp
-Rcpp::List wbg_bootstrap_coba_kernel_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion);
-RcppExport SEXP _tstse_wbg_bootstrap_coba_kernel_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_coba_kernel_cpp(n, phi, vara, seeds, maxp, criterion));
-    return rcpp_result_gen;
-END_RCPP
-}
 // wbg_bootstrap_coba_kernel_grain_cpp
 Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size);
 RcppExport SEXP _tstse_wbg_bootstrap_coba_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP) {
@@ -265,66 +170,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
     rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_coba_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size));
-    return rcpp_result_gen;
-END_RCPP
-}
-// test_parallel_seq
-Rcpp::NumericVector test_parallel_seq(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp);
-RcppExport SEXP _tstse_test_parallel_seq(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    rcpp_result_gen = Rcpp::wrap(test_parallel_seq(n, phi, vara, seeds, maxp));
-    return rcpp_result_gen;
-END_RCPP
-}
-// test_parallel_tbb_pure
-Rcpp::NumericVector test_parallel_tbb_pure(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp);
-RcppExport SEXP _tstse_test_parallel_tbb_pure(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    rcpp_result_gen = Rcpp::wrap(test_parallel_tbb_pure(n, phi, vara, seeds, maxp));
-    return rcpp_result_gen;
-END_RCPP
-}
-// test_parallel_tbb_rcpp
-Rcpp::NumericVector test_parallel_tbb_rcpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp);
-RcppExport SEXP _tstse_test_parallel_tbb_rcpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    rcpp_result_gen = Rcpp::wrap(test_parallel_tbb_rcpp(n, phi, vara, seeds, maxp));
-    return rcpp_result_gen;
-END_RCPP
-}
-// test_parallel_tbb
-Rcpp::NumericVector test_parallel_tbb(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp);
-RcppExport SEXP _tstse_test_parallel_tbb(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type n(nSEXP);
-    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type vara(varaSEXP);
-    Rcpp::traits::input_parameter< const std::vector<uint64_t>& >::type seeds(seedsSEXP);
-    Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
-    rcpp_result_gen = Rcpp::wrap(test_parallel_tbb(n, phi, vara, seeds, maxp));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -403,24 +248,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_backcast_cpp", (DL_FUNC) &_tstse_backcast_cpp, 4},
     {"_tstse_burg_aic_select_cpp", (DL_FUNC) &_tstse_burg_aic_select_cpp, 4},
     {"_tstse_burg_fit_cpp", (DL_FUNC) &_tstse_burg_fit_cpp, 2},
-    {"_tstse_burg_fit_full_cpp", (DL_FUNC) &_tstse_burg_fit_full_cpp, 2},
     {"_tstse_co_tstat_cpp", (DL_FUNC) &_tstse_co_tstat_cpp, 3},
     {"_tstse_co_full_cpp", (DL_FUNC) &_tstse_co_full_cpp, 3},
     {"_tstse_ols_detrend_cpp", (DL_FUNC) &_tstse_ols_detrend_cpp, 1},
-    {"_tstse_ols_detrend_full_cpp", (DL_FUNC) &_tstse_ols_detrend_full_cpp, 1},
-    {"_tstse_burg_aic_select_pure_export", (DL_FUNC) &_tstse_burg_aic_select_pure_export, 3},
-    {"_tstse_co_tstat_pure_export", (DL_FUNC) &_tstse_co_tstat_pure_export, 3},
-    {"_tstse_co_full_pure_export", (DL_FUNC) &_tstse_co_full_pure_export, 3},
+    {"_tstse_co_tstat_pure_cpp", (DL_FUNC) &_tstse_co_tstat_pure_cpp, 3},
     {"_tstse_gen_ar_seeded_cpp", (DL_FUNC) &_tstse_gen_ar_seeded_cpp, 4},
-    {"_tstse_gen_ar_cpp", (DL_FUNC) &_tstse_gen_ar_cpp, 4},
-    {"_tstse_wbg_bootstrap_kernel_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_cpp, 6},
     {"_tstse_wbg_bootstrap_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_grain_cpp, 7},
-    {"_tstse_wbg_bootstrap_coba_kernel_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_cpp, 6},
     {"_tstse_wbg_bootstrap_coba_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_grain_cpp, 7},
-    {"_tstse_test_parallel_seq", (DL_FUNC) &_tstse_test_parallel_seq, 5},
-    {"_tstse_test_parallel_tbb_pure", (DL_FUNC) &_tstse_test_parallel_tbb_pure, 5},
-    {"_tstse_test_parallel_tbb_rcpp", (DL_FUNC) &_tstse_test_parallel_tbb_rcpp, 5},
-    {"_tstse_test_parallel_tbb", (DL_FUNC) &_tstse_test_parallel_tbb, 5},
     {"_tstse_convolve_truncated_cpp", (DL_FUNC) &_tstse_convolve_truncated_cpp, 3},
     {"_tstse_gegenb_cpp", (DL_FUNC) &_tstse_gegenb_cpp, 3},
     {"_tstse_gen_arch_cpp", (DL_FUNC) &_tstse_gen_arch_cpp, 5},

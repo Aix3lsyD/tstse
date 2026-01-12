@@ -1,15 +1,15 @@
-## Makevars.in for tstse package - Optimized for Mac/Linux
+## Makevars.in for tstse package
 
 CXX_STD = CXX17
 
 ## Disable Armadillo bounds checking (significant speedup)
 PKG_CPPFLAGS = -DARMA_NO_DEBUG
 
-## Portable optimizations that work with any -O level:
+## Compiler-specific optimizations (detected by configure)
 ## -flto: Link-Time Optimization (5-15% gain, works on Clang & GCC)
 ## -fno-math-errno: Skip errno for math functions (minor gain)
 ## -fno-trapping-math: Assume FP ops don't trap (enables more opts)
-PKG_CXXFLAGS = -flto -fno-math-errno -fno-trapping-math
+PKG_CXXFLAGS = @EXTRA_CXXFLAGS@
 
-## TBB linking + LTO at link time
-PKG_LIBS = -flto -L@TBB_LIB@ -ltbb -ltbbmalloc -Wl,-rpath,@TBB_LIB@
+## TBB linking + any detected link-time flags
+PKG_LIBS = @EXTRA_LDFLAGS@ -L@TBB_LIB@ -ltbb -ltbbmalloc -Wl,-rpath,@TBB_LIB@

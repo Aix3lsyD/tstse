@@ -4,7 +4,8 @@
 // THREAD-SAFE: YES (returns BurgResult struct, not Rcpp::List)
 //
 // Implements Burg's algorithm for AR coefficient estimation with automatic
-// order selection via AIC, AICc, or BIC. Matches R's ar.burg() exactly.
+// order selection via AIC, AICc, or BIC. Follows the same Levinson-Durbin
+// recursion as R's ar.burg() (see test-cpp-components.R for equivalence tests).
 //
 // Key internal functions:
 //   - burg_aic_select_pure(): Thread-safe Burg with IC selection
@@ -19,7 +20,7 @@
 
 
 // Pure C++ Burg with AIC/BIC selection
-// Matches R's ar.burg() implementation exactly
+// Implements Levinson-Durbin recursion (same algorithm as R's ar.burg)
 // Thread-safe: no Rcpp types, only arma and C++ structs
 // min_p: minimum AR order to consider (0 = include AR(0), 1 = AR(1)+ only)
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
@@ -362,20 +363,4 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
 
     // Single allocation at return (unavoidable - need to return result)
     return BurgResult(ws.best_phi.head(ws.best_p), best_vara, ws.best_p, best_ic);
-}
-
-
-// Rcpp export wrapper (for R interface)
-[[deprecated("Internal pure C++ variant - use burg_aic_select_cpp()")]]
-// [[Rcpp::export]]
-Rcpp::List burg_aic_select_pure_export(const arma::vec& x, int maxp = 5,
-                                        std::string criterion = "aic") {
-    BurgResult result = burg_aic_select_pure(x, maxp, criterion);
-
-    return Rcpp::List::create(
-        Rcpp::Named("phi") = result.phi,
-        Rcpp::Named("vara") = result.vara,
-        Rcpp::Named("p") = result.p,
-        Rcpp::Named("ic") = result.ic
-    );
 }

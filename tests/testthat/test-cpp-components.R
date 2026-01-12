@@ -64,15 +64,16 @@ test_that("burg_fit_cpp handles AR(1) near unit root", {
   expect_equal(phi_cpp[1], fit_r$ar[1], tolerance = 1e-8)
 })
 
-test_that("burg_fit_full_cpp returns complete output", {
+test_that("burg_aic_select_cpp returns complete output", {
   set.seed(111)
   x <- arima.sim(list(ar = c(0.7, -0.2)), n = 300)
 
-  result <- burg_fit_full_cpp(x, 2)
+  result <- burg_aic_select_cpp(x, maxp = 5, criterion = "aic")
 
   expect_true("phi" %in% names(result))
   expect_true("vara" %in% names(result))
-  expect_equal(length(result$phi), 2)
+  expect_true("p" %in% names(result))
+  expect_equal(length(result$phi), result$p)
   expect_true(result$vara > 0)
 })
 
@@ -292,18 +293,16 @@ test_that("all C++ functions handle minimum viable input", {
   expect_length(co_time_transform_cpp(10, 0.5), 9)
 })
 
-test_that("ols_detrend_full_cpp returns slope and intercept", {
+test_that("ols_detrend_cpp produces correct detrending (coefficients via lm)", {
   set.seed(999)
   x <- 10 + 2 * (1:100) + rnorm(100, sd = 0.1)
 
-  result <- ols_detrend_full_cpp(x)
+  resid_cpp <- as.numeric(ols_detrend_cpp(x))
+  fit <- lm(x ~ seq_along(x))
 
-  expect_true("residuals" %in% names(result))
-  expect_true("intercept" %in% names(result))
-  expect_true("slope" %in% names(result))
-  expect_equal(length(result$residuals), 100)
-  expect_equal(result$intercept, 10, tolerance = 0.5)
-  expect_equal(result$slope, 2, tolerance = 0.1)
+  expect_equal(resid_cpp, as.numeric(resid(fit)), tolerance = 1e-10)
+  expect_equal(unname(coef(fit)[1]), 10, tolerance = 0.05)  # intercept
+  expect_equal(unname(coef(fit)[2]), 2, tolerance = 0.01)   # slope
 })
 
 # ols_tstat_cpp is now internal (not exported to R)

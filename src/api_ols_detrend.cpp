@@ -7,8 +7,7 @@
 // Equivalent to: resid(lm(x ~ seq_along(x)))
 //
 // Exports:
-//   - ols_detrend_cpp(): Primary API, returns residuals
-//   - ols_detrend_full_cpp(): [DEPRECATED] Debug version with coefficients
+//   - ols_detrend_cpp(): Returns detrended residuals
 // =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
@@ -49,43 +48,4 @@ arma::vec ols_detrend_cpp(const arma::vec& x) {
   arma::vec resid = x - a_hat - b_hat * t;
 
   return resid;
-}
-
-
-//' OLS Detrend with Coefficients (C++ implementation)
-//'
-//' Returns both residuals and OLS coefficients for validation.
-//'
-//' @param x Numeric vector, the time series.
-//' @return List with residuals, intercept, and slope.
-//' @keywords internal
-//' @noRd
-[[deprecated("Debug function - use ols_detrend_cpp() instead")]]
-// [[Rcpp::export]]
-Rcpp::List ols_detrend_full_cpp(const arma::vec& x) {
-  const int n = x.n_elem;
-
-  // Time index: 1, 2, ..., n
-  arma::vec t = arma::linspace(1.0, static_cast<double>(n), n);
-
-  // Means
-  const double x_mean = arma::mean(x);
-  const double t_mean = (n + 1.0) / 2.0;
-
-  // Centered vectors
-  arma::vec x_c = x - x_mean;
-  arma::vec t_c = t - t_mean;
-
-  // OLS slope and intercept
-  const double b_hat = arma::dot(x_c, t_c) / arma::dot(t_c, t_c);
-  const double a_hat = x_mean - b_hat * t_mean;
-
-  // Residuals
-  arma::vec resid = x - a_hat - b_hat * t;
-
-  return Rcpp::List::create(
-    Rcpp::Named("residuals") = resid,
-    Rcpp::Named("intercept") = a_hat,
-    Rcpp::Named("slope") = b_hat
-  );
 }
