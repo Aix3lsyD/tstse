@@ -41,6 +41,7 @@
 #'   \item{ar_method}{AR estimation method used.}
 #'   \item{n}{Sample size.}
 #'   \item{nb}{Number of bootstrap replicates.}
+#'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 #'
 #'   If `bootadj = TRUE`, also includes:
 #'   \item{obs_stat_adj}{COBA-adjusted observed statistic.}
@@ -235,7 +236,8 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
     ar_phi = ar_phi,
     ar_method = ar_method_used,
     n = n,
-    nb = nb
+    nb = nb,
+    boot_seeds = boot_seeds
   )
 
   # --- COBA Adjustment (Second Bootstrap) ---

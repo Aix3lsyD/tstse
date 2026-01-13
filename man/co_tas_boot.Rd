@@ -10,6 +10,8 @@ co_tas_boot(
   maxp = 5L,
   type = c("aic", "aicc", "bic"),
   btest = FALSE,
+  use_fast = TRUE,
+  cores = 1L,
   seed = NULL
 )
 }
@@ -26,6 +28,14 @@ co_tas_boot(
 \item{btest}{Logical. If \code{FALSE} (default), bootstrap using p-values.
 If \code{TRUE}, bootstrap using t-statistics (comparing absolute values).}
 
+\item{use_fast}{Logical. If \code{TRUE} (default), use \code{\link[=co_tas_fast]{co_tas_fast()}} for
+improved performance. If \code{FALSE}, use \code{\link[=co_tas]{co_tas()}}. This parameter may
+be deprecated in a future version when only the fast implementation
+is supported.}
+
+\item{cores}{Integer, number of cores for parallel processing.
+Default is 1 (sequential). Set to 0 to use all available cores.}
+
 \item{seed}{Optional integer seed for reproducibility. Default is NULL.}
 }
 \value{
@@ -40,6 +50,7 @@ A list with class \code{"co_tas_boot"} containing:
 \item{btest}{Logical indicating which bootstrap method was used.}
 \item{boot_pvals}{Vector of bootstrap p-values (if \code{btest=FALSE}).}
 \item{boot_tco}{Vector of bootstrap t-statistics (if \code{btest=TRUE}).}
+\item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 }
 \description{
 Performs a bootstrap version of the Cochrane-Orcutt trend test with
@@ -67,6 +78,11 @@ The bootstrap procedure:
 
 The t-statistic bootstrap (\code{btest=TRUE}) can be more powerful when the
 null distribution of p-values is not uniform.
+
+By default, this function uses \code{\link[=co_tas_fast]{co_tas_fast()}} internally for improved
+performance (~10x faster). Set \code{use_fast = FALSE} to use the original
+\code{\link[=co_tas]{co_tas()}} implementation. For maximum speed with parallel execution,
+use \code{\link[=co_tas_boot_fast]{co_tas_boot_fast()}}.
 }
 \examples{
 # Generate series with trend and AR(1) errors
@@ -90,7 +106,7 @@ Woodward, W. A., Gray, H. L., and Elliott, A. C. (2017).
 \emph{Applied Time Series Analysis with R}. CRC Press.
 }
 \seealso{
-\code{\link[=co_tas]{co_tas()}} for the non-bootstrap version,
-\code{\link[=co_tas_boot_fast]{co_tas_boot_fast()}} for C++ accelerated version,
+\code{\link[=co_tas]{co_tas()}}, \code{\link[=co_tas_fast]{co_tas_fast()}} for the non-bootstrap version,
+\code{\link[=co_tas_boot_fast]{co_tas_boot_fast()}} for fully parallelized C++ version,
 \code{\link[=wbg_boot]{wbg_boot()}} for WBG bootstrap trend test
 }

@@ -407,3 +407,25 @@ test_that("wbg_boot_flex works with custom stat_fn", {
   expect_s3_class(result, "wbg_boot_flex")
   expect_false(is.na(result$pvalue))
 })
+
+
+# ==============================================================================
+# Parallel equivalence tests
+# ==============================================================================
+
+test_that("wbg_boot_flex parallel matches sequential", {
+  skip_on_cran()
+  skip_if(parallel::detectCores(logical = FALSE) < 2, "Not enough cores")
+
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+  stat_fn <- make_stat_ols_t()
+
+  result_seq <- wbg_boot_flex(x, stat_fn, nb = 49, cores = 1, seed = 456, verbose = FALSE)
+  result_par <- wbg_boot_flex(x, stat_fn, nb = 49, cores = 2, seed = 456, verbose = FALSE)
+
+  expect_equal(result_seq$obs_stat, result_par$obs_stat)
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+  expect_equal(result_seq$boot_dist, result_par$boot_dist)
+  expect_equal(result_seq$boot_seeds, result_par$boot_seeds)
+})

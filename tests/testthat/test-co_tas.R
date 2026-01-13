@@ -263,3 +263,35 @@ test_that("co_tas_boot input validation for btest", {
   expect_error(co_tas_boot(rnorm(50), btest = "yes"), "must be TRUE or FALSE")
   expect_error(co_tas_boot(rnorm(50), btest = NA), "must be TRUE or FALSE")
 })
+
+test_that("co_tas_boot use_fast=TRUE matches use_fast=FALSE", {
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+
+  # Same seed for both to ensure identical bootstrap samples
+  result_fast <- co_tas_boot(x, nb = 49, maxp = 5, use_fast = TRUE, seed = 456)
+  result_slow <- co_tas_boot(x, nb = 49, maxp = 5, use_fast = FALSE, seed = 456)
+
+  # Core statistics should match
+  expect_equal(result_fast$tco, result_slow$tco, tolerance = 0.01)
+  expect_equal(result_fast$pvalue_asymptotic, result_slow$pvalue_asymptotic, tolerance = 0.05)
+  expect_equal(result_fast$phi, result_slow$phi, tolerance = 1e-6)
+  expect_equal(result_fast$pvalue, result_slow$pvalue, tolerance = 0.1)
+})
+
+test_that("co_tas_boot parallel matches sequential", {
+  skip_on_cran()
+  skip_if(parallel::detectCores(logical = FALSE) < 2, "Not enough cores")
+
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+
+  result_seq <- co_tas_boot(x, nb = 49, maxp = 5, cores = 1, seed = 456)
+  result_par <- co_tas_boot(x, nb = 49, maxp = 5, cores = 2, seed = 456)
+
+  # Results should be identical with same seed
+  expect_equal(result_seq$tco, result_par$tco)
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+  expect_equal(result_seq$boot_pvals, result_par$boot_pvals)
+  expect_equal(result_seq$boot_seeds, result_par$boot_seeds)
+})

@@ -12,6 +12,12 @@
 #'   `"aic"`, `"aicc"`, or `"bic"`. Default is `"aic"`.
 #' @param btest Logical. If `FALSE` (default), bootstrap using p-values.
 #'   If `TRUE`, bootstrap using t-statistics (comparing absolute values).
+#' @param use_fast Logical. If `TRUE` (default), use [co_tas_fast()] for
+#'   improved performance. If `FALSE`, use [co_tas()]. This parameter may
+#'   be deprecated in a future version when only the fast implementation
+#'   is supported.
+#' @param cores Integer, number of cores for parallel processing.
+#'   Default is 1 (sequential). Set to 0 to use all available cores.
 #' @param seed Optional integer seed for reproducibility. Default is NULL.
 #'
 #' @return A list with class `"co_tas_boot"` containing:
@@ -25,6 +31,7 @@
 #'   \item{btest}{Logical indicating which bootstrap method was used.}
 #'   \item{boot_pvals}{Vector of bootstrap p-values (if `btest=FALSE`).}
 #'   \item{boot_tco}{Vector of bootstrap t-statistics (if `btest=TRUE`).}
+#'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 #'
 #' @details
 #' The bootstrap procedure:
@@ -47,12 +54,17 @@
 #' The t-statistic bootstrap (`btest=TRUE`) can be more powerful when the
 #' null distribution of p-values is not uniform.
 #'
+#' By default, this function uses [co_tas_fast()] internally for improved
+#' performance (~10x faster). Set `use_fast = FALSE` to use the original
+#' [co_tas()] implementation. For maximum speed with parallel execution,
+#' use [co_tas_boot_fast()].
+#'
 #' @references
 #' Woodward, W. A., Gray, H. L., and Elliott, A. C. (2017).
 #' *Applied Time Series Analysis with R*. CRC Press.
 #'
-#' @seealso [co_tas()] for the non-bootstrap version,
-#'   [co_tas_boot_fast()] for C++ accelerated version,
+#' @seealso [co_tas()], [co_tas_fast()] for the non-bootstrap version,
+#'   [co_tas_boot_fast()] for fully parallelized C++ version,
 #'   [wbg_boot()] for WBG bootstrap trend test
 #'
 #' @examples
@@ -75,6 +87,8 @@
 co_tas_boot <- function(x, nb = 399L, maxp = 5L,
                          type = c("aic", "aicc", "bic"),
                          btest = FALSE,
+                         use_fast = TRUE,
+                         cores = 1L,
                          seed = NULL) {
 
   type <- match.arg(type)
@@ -92,19 +106,30 @@ co_tas_boot <- function(x, nb = 399L, maxp = 5L,
   if (!is.logical(btest) || length(btest) != 1 || is.na(btest)) {
     stop("`btest` must be TRUE or FALSE", call. = FALSE)
   }
+  if (!is.logical(use_fast) || length(use_fast) != 1 || is.na(use_fast)) {
+    stop("`use_fast` must be TRUE or FALSE", call. = FALSE)
+  }
 
   n <- length(x)
+  cores <- get_cores(cores)
+  if (use_fast && n < 10) {
+    stop("Series must have at least 10 observations when use_fast = TRUE", call. = FALSE)
+  }
   nb <- as.integer(nb)
   maxp <- as.integer(maxp)
 
-  # Set seed if provided
+  # Select co_tas implementation
+  co_tas_fn <- if (use_fast) co_tas_fast else co_tas
+
+  # Generate seeds upfront for reproducibility with parallel processing
   if (!is.null(seed)) {
     set.seed(seed)
   }
+  boot_seeds <- sample.int(.Machine$integer.max, nb)
 
   # Step 1: Fit co_tas to original data for test statistic
 
-  result <- co_tas(x, maxp = maxp, type = type)
+  result <- co_tas_fn(x, maxp = maxp, type = type)
   pval_obs <- result$pvalue
   tco_obs <- result$tco
   phi <- result$phi
@@ -116,39 +141,31 @@ co_tas_boot <- function(x, nb = 399L, maxp = 5L,
   vara <- null_fit$vara
 
   # Step 3: Bootstrap under null hypothesis (no trend)
-  if (!btest) {
-    # Bootstrap using p-values
-    boot_pvals <- numeric(nb)
+  # Define closure function for bootstrap replicate
+  boot_fn <- function(i) {
+    set.seed(boot_seeds[i])
+    boot_dat <- gen_arma(n = n, phi = phi_null, vara = vara, plot = FALSE)
+    boot_result <- co_tas_fn(boot_dat, maxp = maxp, type = type)
+    if (btest) boot_result$tco else boot_result$pvalue
+  }
 
-    for (i in seq_len(nb)) {
-      # Generate AR series with no trend using null model
-      boot_dat <- gen_arma(n = n, phi = phi_null, vara = vara, plot = FALSE)
-
-      # Compute p-value for bootstrap series
-      boot_result <- co_tas(boot_dat, maxp = maxp, type = type)
-      boot_pvals[i] <- boot_result$pvalue
-    }
-
-    # Bootstrap p-value = proportion of boot p-values <= observed
-    pvalue_boot <- sum(boot_pvals <= pval_obs) / nb
-    boot_tco <- NULL
-
+  # Execute parallel or sequential
+  if (cores > 1L) {
+    boot_results <- pmap(seq_len(nb), boot_fn, cores = cores)
+    boot_values <- unlist(boot_results)
   } else {
-    # Bootstrap using t-statistics
-    boot_tco <- numeric(nb)
+    boot_values <- vapply(seq_len(nb), boot_fn, numeric(1))
+  }
 
-    for (i in seq_len(nb)) {
-      # Generate AR series with no trend using null model
-      boot_dat <- gen_arma(n = n, phi = phi_null, vara = vara, plot = FALSE)
-
-      # Compute t-statistic for bootstrap series
-      boot_result <- co_tas(boot_dat, maxp = maxp, type = type)
-      boot_tco[i] <- boot_result$tco
-    }
-
-    # Bootstrap p-value = proportion with |t| >= |observed t|
-    pvalue_boot <- sum(abs(boot_tco) >= abs(tco_obs)) / nb
+  # Compute bootstrap p-value
+  if (btest) {
+    boot_tco <- boot_values
     boot_pvals <- NULL
+    pvalue_boot <- sum(abs(boot_tco) >= abs(tco_obs)) / nb
+  } else {
+    boot_pvals <- boot_values
+    boot_tco <- NULL
+    pvalue_boot <- sum(boot_pvals <= pval_obs) / nb
   }
 
   # Return result
@@ -162,7 +179,8 @@ co_tas_boot <- function(x, nb = 399L, maxp = 5L,
     nb = nb,
     btest = btest,
     boot_pvals = boot_pvals,
-    boot_tco = boot_tco
+    boot_tco = boot_tco,
+    boot_seeds = boot_seeds
   )
 
   class(result_boot) <- "co_tas_boot"

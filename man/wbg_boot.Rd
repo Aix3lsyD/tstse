@@ -10,6 +10,7 @@ wbg_boot(
   maxp = 5L,
   method = c("burg", "mle", "yw"),
   type = c("aic", "aicc", "bic"),
+  use_fast = TRUE,
   cores = 1L,
   seed = NULL
 )
@@ -27,6 +28,12 @@ or \code{"yw"}. Default is \code{"burg"} (matches original tswge).}
 \item{type}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
 
+\item{use_fast}{Logical. If \code{TRUE} (default), use \code{\link[=co_fast]{co_fast()}} for
+improved performance (~2-3x faster). If \code{FALSE}, use \code{\link[=co]{co()}}.
+Note: \code{use_fast = TRUE} requires \code{method = "burg"}. This parameter
+may be deprecated in a future version when only the fast implementation
+is supported.}
+
 \item{cores}{Integer, number of cores for parallel processing.
 Default NULL uses \code{getOption("tstse.cores", 1)}.
 Set to 0 to use all available cores.}
@@ -41,6 +48,7 @@ A list containing:
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 \item{boot_tstats}{Numeric vector of bootstrap t-statistics.}
 \item{nb}{Number of bootstrap replicates used.}
+\item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 }
 \description{
 Bootstrap hypothesis test for trend in time series with autocorrelated
@@ -62,6 +70,11 @@ trend are invalid when residuals are autocorrelated. The procedure:
 This provides a more accurate p-value than the asymptotic approximation
 used in \code{\link[=co]{co()}}, especially for small to moderate sample sizes with
 highly autocorrelated errors.
+
+By default, this function uses \code{\link[=co_fast]{co_fast()}} internally for improved
+performance. Set \code{use_fast = FALSE} to use the original \code{\link[=co]{co()}}
+implementation. For maximum speed with full C++ parallelization,
+use \code{\link[=wbg_boot_fast]{wbg_boot_fast()}}.
 }
 \examples{
 \donttest{
@@ -85,6 +98,7 @@ Trend in Time Series Data." \emph{Journal of Agricultural, Biological, and
 Environmental Statistics}, 2(4), 403-416.
 }
 \seealso{
-\code{\link[=co]{co()}} for Cochrane-Orcutt estimation,
+\code{\link[=co]{co()}}, \code{\link[=co_fast]{co_fast()}} for Cochrane-Orcutt estimation,
+\code{\link[=wbg_boot_fast]{wbg_boot_fast()}} for fully parallelized C++ version,
 \code{\link[=aic_ar]{aic_ar()}} for AR order selection.
 }

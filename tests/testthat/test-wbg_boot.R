@@ -7,7 +7,7 @@ test_that("wbg_boot returns expected structure", {
   result <- wbg_boot(x, nb = 49, maxp = 3, seed = 456)
 
   expect_type(result, "list")
-  expect_named(result, c("p", "phi", "pvalue", "tco_obs", "boot_tstats", "nb"))
+  expect_named(result, c("p", "phi", "pvalue", "tco_obs", "boot_tstats", "nb", "boot_seeds"))
   expect_true(result$p >= 0)
   expect_true(result$pvalue >= 0 && result$pvalue <= 1)
   expect_equal(result$nb, 49L)
@@ -64,8 +64,9 @@ test_that("wbg_boot works with different methods", {
   x <- rnorm(50) + 0.05 * seq_len(50)
 
   result_burg <- wbg_boot(x, nb = 49, method = "burg", seed = 111)
-  result_mle <- wbg_boot(x, nb = 49, method = "mle", seed = 111)
-  result_yw <- wbg_boot(x, nb = 49, method = "yw", seed = 111)
+  # MLE and YW require use_fast = FALSE since co_fast only supports Burg
+  result_mle <- wbg_boot(x, nb = 49, method = "mle", use_fast = FALSE, seed = 111)
+  result_yw <- wbg_boot(x, nb = 49, method = "yw", use_fast = FALSE, seed = 111)
 
   # All should return valid results
   expect_true(result_burg$pvalue >= 0 && result_burg$pvalue <= 1)
@@ -190,4 +191,37 @@ test_that("CO t-statistic is scale and shift invariant",
   # Shift invariance: x + 100 should give same t-stat
   t_shifted <- co_tstat_cpp(x + 100, maxp = 5, criterion = "aic")
   expect_equal(t_original, t_shifted, tolerance = 1e-10)
+})
+
+test_that("wbg_boot use_fast=TRUE matches use_fast=FALSE", {
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+
+  # Same seed for both to ensure identical bootstrap samples
+  # Both must use method="burg" since co_fast only supports Burg
+  result_fast <- wbg_boot(x, nb = 49, maxp = 5, method = "burg", use_fast = TRUE, seed = 456)
+  result_slow <- wbg_boot(x, nb = 49, maxp = 5, method = "burg", use_fast = FALSE, seed = 456)
+
+  # Core statistics should match
+  expect_equal(result_fast$tco_obs, result_slow$tco_obs, tolerance = 0.01)
+  expect_equal(result_fast$p, result_slow$p)
+  expect_equal(result_fast$phi, result_slow$phi, tolerance = 1e-6)
+  expect_equal(result_fast$pvalue, result_slow$pvalue, tolerance = 0.1)
+})
+
+test_that("wbg_boot parallel matches sequential", {
+  skip_on_cran()
+  skip_if(parallel::detectCores(logical = FALSE) < 2, "Not enough cores")
+
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 100)
+
+  result_seq <- wbg_boot(x, nb = 49, maxp = 5, cores = 1, seed = 456)
+  result_par <- wbg_boot(x, nb = 49, maxp = 5, cores = 2, seed = 456)
+
+  # Results should be identical with same seed
+  expect_equal(result_seq$tco_obs, result_par$tco_obs)
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+  expect_equal(result_seq$boot_tstats, result_par$boot_tstats)
+  expect_equal(result_seq$boot_seeds, result_par$boot_seeds)
 })

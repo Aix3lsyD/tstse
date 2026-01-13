@@ -153,7 +153,8 @@ make_stat_mk <- function() {
 #' @export
 make_stat_spearman <- function() {
   function(x) {
-    cor(x, seq_along(x), method = "spearman")
+    # Suppress warning for constant series (sd = 0)
+    suppressWarnings(cor(x, seq_along(x), method = "spearman"))
   }
 }
 

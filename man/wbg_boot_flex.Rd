@@ -72,6 +72,7 @@ An object of class \code{"wbg_boot_flex"} containing:
 \item{ar_method}{AR estimation method used.}
 \item{n}{Sample size.}
 \item{nb}{Number of bootstrap replicates.}
+\item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 
 If \code{bootadj = TRUE}, also includes:
 \item{obs_stat_adj}{COBA-adjusted observed statistic.}
