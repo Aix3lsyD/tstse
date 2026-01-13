@@ -9,6 +9,7 @@ co_tas_boot(
   nb = 399L,
   maxp = 5L,
   type = c("aic", "aicc", "bic"),
+  btest = FALSE,
   seed = NULL
 )
 }
@@ -22,6 +23,9 @@ co_tas_boot(
 \item{type}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
 
+\item{btest}{Logical. If \code{FALSE} (default), bootstrap using p-values.
+If \code{TRUE}, bootstrap using t-statistics (comparing absolute values).}
+
 \item{seed}{Optional integer seed for reproducibility. Default is NULL.}
 }
 \value{
@@ -29,27 +33,40 @@ A list with class \code{"co_tas_boot"} containing:
 \item{pvalue}{Bootstrap p-value for test of H0: no trend.}
 \item{tco}{t-statistic from the original data.}
 \item{pvalue_asymptotic}{Asymptotic p-value from \code{\link[=co_tas]{co_tas()}}.}
-\item{phi}{AR coefficients from the original fit.}
+\item{phi}{AR coefficients from the CO-TAS fit (differenced series model).}
+\item{phi_null}{AR coefficients from null model (fit to original data).}
+\item{vara}{Innovation variance from null model.}
 \item{nb}{Number of bootstrap replicates used.}
+\item{btest}{Logical indicating which bootstrap method was used.}
+\item{boot_pvals}{Vector of bootstrap p-values (if \code{btest=FALSE}).}
+\item{boot_tco}{Vector of bootstrap t-statistics (if \code{btest=TRUE}).}
 }
 \description{
 Performs a bootstrap version of the Cochrane-Orcutt trend test with
 Turner adjusted sample size. The bootstrap p-value is computed by
-comparing the observed p-value to the distribution of p-values
-under the null hypothesis (no trend).
+comparing the observed test statistic to its distribution under the
+null hypothesis (no trend).
 }
 \details{
 The bootstrap procedure:
 \enumerate{
-\item Fit \code{\link[=co_tas]{co_tas()}} to the original data to obtain the AR model
-\item Generate \code{nb} bootstrap series from AR(phi) with no trend
-\item For each bootstrap series, compute the p-value using \code{\link[=co_tas]{co_tas()}}
-\item Bootstrap p-value = proportion of bootstrap p-values smaller
-than the observed p-value
+\item Fit \code{\link[=co_tas]{co_tas()}} to the original data to obtain the test statistic
+\item Fit AR(p) model directly to the original data for the null model
+\item Generate \code{nb} bootstrap series from AR(phi_null) with no trend
+\item For each bootstrap series:
+\itemize{
+\item If \code{btest=FALSE}: compute p-value using \code{\link[=co_tas]{co_tas()}}
+\item If \code{btest=TRUE}: compute t-statistic using \code{\link[=co_tas]{co_tas()}}
+}
+\item Compute bootstrap p-value:
+\itemize{
+\item If \code{btest=FALSE}: proportion of bootstrap p-values <= observed
+\item If \code{btest=TRUE}: proportion with |t| >= |observed t|
+}
 }
 
-This provides a more accurate p-value than the asymptotic version
-when sample sizes are small or autocorrelation is strong.
+The t-statistic bootstrap (\code{btest=TRUE}) can be more powerful when the
+null distribution of p-values is not uniform.
 }
 \examples{
 # Generate series with trend and AR(1) errors
@@ -59,9 +76,13 @@ t <- 1:n
 z <- arima.sim(list(ar = 0.7), n = n)
 x <- 5 + 0.1 * t + z
 
-# Bootstrap trend test (use more replicates in practice)
+# Bootstrap trend test using p-values (default)
 result <- co_tas_boot(x, nb = 99, seed = 42)
 print(result)
+
+# Bootstrap using t-statistics
+result_t <- co_tas_boot(x, nb = 99, btest = TRUE, seed = 42)
+print(result_t)
 
 }
 \references{
@@ -70,5 +91,6 @@ Woodward, W. A., Gray, H. L., and Elliott, A. C. (2017).
 }
 \seealso{
 \code{\link[=co_tas]{co_tas()}} for the non-bootstrap version,
+\code{\link[=co_tas_boot_fast]{co_tas_boot_fast()}} for C++ accelerated version,
 \code{\link[=wbg_boot]{wbg_boot()}} for WBG bootstrap trend test
 }

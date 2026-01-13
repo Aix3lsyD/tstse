@@ -15,19 +15,39 @@
 //   - ar_acf_pure(): Theoretical ACF for AR(p) via Yule-Walker recursion
 //   - effective_n_from_acf(): Turner's effective sample size
 //   - co_tas_pure(): Main CO-TAS computation
-//   - co_tas_pvalue_pure(): Returns p-value for bootstrap comparison
+//   - co_tas_pvalue_ws(): Workspace-aware p-value for bootstrap (zero alloc)
+//   - co_tas_tstat_ws(): Workspace-aware t-stat for bootstrap (zero alloc)
 //
 // Used by: kernel_co_tas_boot.cpp (parallel bootstrap), api_co_tas.cpp
 // =============================================================================
-// [[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::depends(RcppArmadillo, BH)]]
 
 #include "kernel_types.h"
 #include <cmath>
 #include <limits>
+#include <boost/math/distributions/students_t.hpp>
+
+// =============================================================================
+// Exact t-distribution p-value using Boost
+// Replaces the previous approximation for accuracy in bootstrap comparisons
+// =============================================================================
+static double t_pvalue_exact(double t_value, double df) {
+    if (df < 1.0) df = 1.0;
+    double abs_t = std::fabs(t_value);
+    boost::math::students_t dist(df);
+    // Two-sided p-value: P(|T| > |t|) = 2 * P(T > |t|)
+    return 2.0 * boost::math::cdf(boost::math::complement(dist, abs_t));
+}
 
 // Forward declaration of Burg kernel
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
                                  const std::string& criterion, int min_p);
+
+// Forward declaration of workspace-aware Burg kernel
+BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
+                               CriterionType ic_type,
+                               CoBootstrapWorkspace& ws,
+                               int min_p);
 
 // =============================================================================
 // Theoretical ACF for AR(p) Process
@@ -415,47 +435,144 @@ CoTasResult co_tas_pure(const arma::vec& x, int maxp, CriterionType ic_type) {
     double df = (n_a > p) ? n_a - p : n_a;
     if (df < 1) df = 1;
 
-    // Two-sided p-value from t-distribution
-    // Using the approximation: p = 2 * (1 - pt(|t|, df))
-    // We need to compute this without R's pt function
-    // Use the incomplete beta function relation
-    double abs_t = std::fabs(t_value);
-    double t2 = abs_t * abs_t;
-
-    // p-value via incomplete beta: P(T > |t|) = I_{df/(df+t^2)}(df/2, 1/2) / 2
-    // For simplicity, use a reasonable approximation or store for R computation
-    // Here we'll compute using the formula and return to R for final pt() call
-    // But for bootstrap, we only need to compare p-values, so relative ordering is fine
-
-    // Approximation for t-distribution CDF (Wilson-Hilferty style)
-    // For large df: t ~ N(0,1)
-    // For moderate df: use approximation
-    double pvalue;
-    if (df > 100) {
-        // Normal approximation
-        pvalue = 2.0 * (1.0 - 0.5 * std::erfc(-abs_t / std::sqrt(2.0)));
-    } else {
-        // Approximation using normal with df adjustment
-        // Accurate enough for p-value comparison in bootstrap
-        double z = abs_t * std::sqrt((df - 0.5) / (df * (1.0 + t2 / df)));
-        pvalue = 2.0 * (1.0 - 0.5 * std::erfc(-z / std::sqrt(2.0)));
-    }
-
-    // Clamp to [0, 1]
-    if (pvalue < 0.0) pvalue = 0.0;
-    if (pvalue > 1.0) pvalue = 1.0;
-
-    result.pvalue = pvalue;
+    // Exact two-sided p-value using Boost t-distribution
+    result.pvalue = t_pvalue_exact(t_value, df);
 
     return result;
 }
 
 // =============================================================================
-// CO-TAS P-value Only (For Bootstrap)
+// Workspace-Aware CO-TAS Kernel (ZERO allocations in hot path)
 //
-// Returns just the p-value for efficiency in bootstrap loop
+// Same algorithm as co_tas_pure() but uses pre-allocated workspace buffers:
+//   - ws.z_diff: Differenced/reconstructed series
+//   - ws.x_trans: AR-transformed series
+//   - ws.xc, ws.ef, ws.eb, etc: Burg algorithm buffers
+//
+// Returns both p-value and t-statistic via CoTasResult
 // =============================================================================
-double co_tas_pvalue_pure(const arma::vec& x, int maxp, CriterionType ic_type) {
-    CoTasResult result = co_tas_pure(x, maxp, ic_type);
+static CoTasResult co_tas_ws_internal(const arma::vec& x, int maxp,
+                                       CriterionType ic_type,
+                                       CoBootstrapWorkspace& ws) {
+    CoTasResult result;
+    int n = x.n_elem;
+
+    if (n < 10) {
+        result.pvalue = 1.0;
+        result.tco = 0.0;
+        result.n_a = n;
+        return result;
+    }
+
+    // Steps 1 & 2: Difference and reconstruct into ws.z_diff (ZERO allocations)
+    double diff_mean = (x(n - 1) - x(0)) / (n - 1);
+
+    ws.z_diff(0) = x(0);
+    for (int t = 1; t < n; ++t) {
+        ws.z_diff(t) = ws.z_diff(t - 1) + x(t) - x(t - 1) - diff_mean;
+    }
+
+    // Step 3: Fit AR model using workspace-aware Burg (ZERO allocations)
+    BurgResult ar_fit = burg_aic_select_ws(ws.z_diff, maxp, ic_type, ws, 1);
+    const arma::vec& phi = ar_fit.phi;
+    int p = ar_fit.p;
+
+    result.phi = phi;  // This copies, but it's small (p <= 20)
+    result.p = p;
+
+    // Step 4: Transform data into ws.x_trans (ZERO allocations)
+    int m = n - p;
+    if (m < 3) {
+        result.pvalue = 1.0;
+        result.tco = 0.0;
+        result.n_a = n;
+        return result;
+    }
+
+    for (int t = 0; t < m; ++t) {
+        double val = x(t + p);
+        for (int j = 0; j < p; ++j) {
+            val -= phi(j) * x(t + p - j - 1);
+        }
+        ws.x_trans(t) = val;
+    }
+
+    // Step 5: Compute affine coefficients for t_trans analytically
+    double alpha = 1.0;
+    double beta = static_cast<double>(p + 1);
+    for (int j = 0; j < p; ++j) {
+        alpha -= phi(j);
+        beta -= phi(j) * (p - j);
+    }
+
+    // Step 6: Streaming OLS - single pass over ws.x_trans
+    double sum_u = 0.0, sum_uu = 0.0;
+    double sum_y = 0.0, sum_yy = 0.0;
+    double sum_uy = 0.0;
+
+    for (int t = 0; t < m; ++t) {
+        double u = alpha * t + beta;
+        double y = ws.x_trans(t);
+        sum_u += u;
+        sum_uu += u * u;
+        sum_y += y;
+        sum_yy += y * y;
+        sum_uy += u * y;
+    }
+
+    double denom = m * sum_uu - sum_u * sum_u;
+    if (denom < 1e-15) {
+        result.pvalue = 1.0;
+        result.tco = 0.0;
+        result.n_a = n;
+        return result;
+    }
+
+    double b_hat = (m * sum_uy - sum_u * sum_y) / denom;
+    double a_hat = (sum_y - b_hat * sum_u) / m;
+
+    double ss_res = sum_yy - a_hat * sum_y - b_hat * sum_uy;
+    if (ss_res < 0) ss_res = 0;
+
+    double ss_u = denom / m;
+    double mse = ss_res / (m - 2);
+    double se_b = std::sqrt(mse / ss_u);
+
+    double t_value = (se_b > 1e-15) ? b_hat / se_b : 0.0;
+    result.tco = t_value;
+
+    // Step 7: Compute effective sample size (streaming, minimal allocation)
+    double n_a = effective_n_streaming(phi, n);
+    result.n_a = n_a;
+
+    // Step 8: Compute p-value with adjusted degrees of freedom
+    double df = (n_a > p) ? n_a - p : n_a;
+    if (df < 1) df = 1;
+
+    // Exact two-sided p-value using Boost t-distribution
+    result.pvalue = t_pvalue_exact(t_value, df);
+
+    return result;
+}
+
+// =============================================================================
+// Workspace-Aware CO-TAS P-value (For Bootstrap)
+//
+// ZERO allocations in hot path - uses pre-allocated workspace buffers
+// =============================================================================
+double co_tas_pvalue_ws(const arma::vec& x, int maxp, CriterionType ic_type,
+                        CoBootstrapWorkspace& ws) {
+    CoTasResult result = co_tas_ws_internal(x, maxp, ic_type, ws);
     return result.pvalue;
+}
+
+// =============================================================================
+// Workspace-Aware CO-TAS t-statistic (For Bootstrap with btest=TRUE)
+//
+// ZERO allocations in hot path - uses pre-allocated workspace buffers
+// =============================================================================
+double co_tas_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
+                       CoBootstrapWorkspace& ws) {
+    CoTasResult result = co_tas_ws_internal(x, maxp, ic_type, ws);
+    return result.tco;
 }

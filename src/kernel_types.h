@@ -79,6 +79,10 @@ struct CoBootstrapWorkspace {
     // Pre-allocated to avoid heap allocation per bootstrap replicate
     arma::vec burn_buf;
 
+    // CO-TAS specific workspace buffers
+    arma::vec z_diff;   // Differenced/reconstructed series for CO-TAS
+    arma::vec x_trans;  // AR-transformed series
+
     CoBootstrapWorkspace() : best_p(0) {}
 
     // Resize all vectors for given n and maxp
@@ -93,6 +97,9 @@ struct CoBootstrapWorkspace {
         a_prev.set_size(maxp);
         best_phi.set_size(maxp);
         burn_buf.set_size(max_burn);
+        // CO-TAS buffers
+        z_diff.set_size(n);
+        x_trans.set_size(n);  // Will use n-p elements, but allocate n for safety
         best_p = 0;
     }
 };

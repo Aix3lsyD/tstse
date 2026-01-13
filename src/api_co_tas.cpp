@@ -8,7 +8,6 @@
 //
 // Exports:
 //   - co_tas_cpp(): Full CO-TAS result
-//   - co_tas_pvalue_cpp(): P-value only (for R-level bootstrap)
 // =============================================================================
 // [[Rcpp::depends(RcppArmadillo)]]
 
@@ -30,7 +29,6 @@ struct CoTasResult {
 
 // Forward declaration of kernel function
 CoTasResult co_tas_pure(const arma::vec& x, int maxp, CriterionType ic_type);
-double co_tas_pvalue_pure(const arma::vec& x, int maxp, CriterionType ic_type);
 
 //' CO-TAS Trend Test (C++ implementation)
 //'
@@ -76,25 +74,4 @@ Rcpp::List co_tas_cpp(const arma::vec& x, int maxp = 5,
         Rcpp::Named("phi") = result.phi,
         Rcpp::Named("p") = result.p
     );
-}
-
-//' CO-TAS P-value Only (C++ implementation)
-//'
-//' Returns only the p-value, for use in R-level bootstrap loops.
-//'
-//' @param x Numeric vector, the time series.
-//' @param maxp Integer, maximum AR order (default 5).
-//' @param type String, information criterion: "aic", "aicc", or "bic".
-//' @return Double, the p-value.
-//' @keywords internal
-//' @noRd
-// [[Rcpp::export]]
-double co_tas_pvalue_cpp(const arma::vec& x, int maxp = 5,
-                          std::string type = "aic") {
-    if (x.n_elem < 10) {
-        return 1.0;  // Return high p-value for short series
-    }
-
-    CriterionType ic_type = criterion_from_string(type);
-    return co_tas_pvalue_pure(x, maxp, ic_type);
 }

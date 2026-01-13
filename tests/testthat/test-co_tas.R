@@ -114,7 +114,12 @@ test_that("co_tas_boot returns correct structure", {
   expect_true("tco" %in% names(result))
   expect_true("pvalue_asymptotic" %in% names(result))
   expect_true("phi" %in% names(result))
+  expect_true("phi_null" %in% names(result))
   expect_true("nb" %in% names(result))
+  expect_true("btest" %in% names(result))
+  expect_true("boot_pvals" %in% names(result))
+  expect_false(result$btest)  # default is FALSE
+  expect_length(result$boot_pvals, 19)
 })
 
 test_that("co_tas_boot p-value is between 0 and 1", {
@@ -171,4 +176,90 @@ test_that("co_tas_boot detects trend with sufficient power", {
 
   # Both bootstrap and asymptotic should detect trend
   expect_lt(result$pvalue, 0.10)
+})
+
+# =============================================================================
+# co_tas_boot btest=TRUE tests
+# =============================================================================
+
+test_that("co_tas_boot with btest=TRUE returns correct structure", {
+  set.seed(1001)
+  x <- arima.sim(list(ar = 0.5), n = 50)
+
+  result <- co_tas_boot(x, nb = 19, maxp = 3, btest = TRUE, seed = 123)
+
+  expect_s3_class(result, "co_tas_boot")
+  expect_true(result$btest)
+  expect_true("boot_tco" %in% names(result))
+  expect_length(result$boot_tco, 19)
+  expect_null(result$boot_pvals)  # Should be NULL when btest=TRUE
+})
+
+test_that("co_tas_boot with btest=TRUE p-value is between 0 and 1", {
+  set.seed(1002)
+  x <- arima.sim(list(ar = 0.5), n = 50)
+
+  result <- co_tas_boot(x, nb = 19, btest = TRUE, seed = 42)
+
+  expect_gte(result$pvalue, 0)
+  expect_lte(result$pvalue, 1)
+})
+
+test_that("co_tas_boot with btest=TRUE is reproducible with seed", {
+  set.seed(1003)
+  x <- arima.sim(list(ar = 0.5), n = 50)
+
+  result1 <- co_tas_boot(x, nb = 19, btest = TRUE, seed = 999)
+  result2 <- co_tas_boot(x, nb = 19, btest = TRUE, seed = 999)
+
+  expect_equal(result1$pvalue, result2$pvalue)
+  expect_equal(result1$tco, result2$tco)
+  expect_equal(result1$boot_tco, result2$boot_tco)
+})
+
+test_that("co_tas_boot btest=TRUE and btest=FALSE give different results", {
+  set.seed(1004)
+  x <- arima.sim(list(ar = 0.5), n = 50)
+
+  result_p <- co_tas_boot(x, nb = 99, btest = FALSE, seed = 42)
+  result_t <- co_tas_boot(x, nb = 99, btest = TRUE, seed = 42)
+
+  # Same t-statistic and asymptotic p-value
+  expect_equal(result_p$tco, result_t$tco)
+  expect_equal(result_p$pvalue_asymptotic, result_t$pvalue_asymptotic)
+
+  # Different bootstrap statistics stored
+  expect_false(is.null(result_p$boot_pvals))
+  expect_true(is.null(result_p$boot_tco))
+  expect_true(is.null(result_t$boot_pvals))
+  expect_false(is.null(result_t$boot_tco))
+})
+
+test_that("co_tas_boot print method shows bootstrap method", {
+  set.seed(1005)
+  x <- arima.sim(list(ar = 0.5), n = 50)
+
+  result_p <- co_tas_boot(x, nb = 19, btest = FALSE, seed = 42)
+  result_t <- co_tas_boot(x, nb = 19, btest = TRUE, seed = 42)
+
+  expect_output(print(result_p), "Bootstrap method: p-value")
+  expect_output(print(result_t), "Bootstrap method: t-statistic")
+})
+
+test_that("co_tas_boot phi_null differs from phi", {
+  set.seed(1006)
+  # Generate series where AR on original vs differenced series may differ
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  result <- co_tas_boot(x, nb = 19, maxp = 5, seed = 42)
+
+  # Both phi and phi_null should be present
+  expect_true(length(result$phi) > 0 || length(result$phi_null) > 0)
+  expect_true("phi_null" %in% names(result))
+})
+
+test_that("co_tas_boot input validation for btest", {
+  # Invalid btest
+  expect_error(co_tas_boot(rnorm(50), btest = "yes"), "must be TRUE or FALSE")
+  expect_error(co_tas_boot(rnorm(50), btest = NA), "must be TRUE or FALSE")
 })

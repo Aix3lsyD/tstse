@@ -9,6 +9,7 @@ co_tas_boot_fast(
   nb = 399L,
   maxp = 5L,
   type = c("aic", "aicc", "bic"),
+  btest = FALSE,
   seed = NULL
 )
 }
@@ -22,6 +23,9 @@ co_tas_boot_fast(
 \item{type}{Character. Information criterion for order selection:
 \code{"aic"}, \code{"aicc"}, or \code{"bic"}. Default is \code{"aic"}.}
 
+\item{btest}{Logical. If \code{FALSE} (default), bootstrap using p-values.
+If \code{TRUE}, bootstrap using t-statistics (comparing absolute values).}
+
 \item{seed}{Optional integer seed for reproducibility. Default is NULL.}
 }
 \value{
@@ -29,9 +33,13 @@ A list with class \code{"co_tas_boot"} containing:
 \item{pvalue}{Bootstrap p-value for test of H0: no trend.}
 \item{tco}{t-statistic from the original data.}
 \item{pvalue_asymptotic}{Asymptotic p-value from \code{\link[=co_tas_fast]{co_tas_fast()}}.}
-\item{phi}{AR coefficients from the original fit.}
+\item{phi}{AR coefficients from the CO-TAS fit (differenced series model).}
+\item{phi_null}{AR coefficients from null model (fit to original data).}
+\item{vara}{Innovation variance from null model.}
 \item{nb}{Number of bootstrap replicates used.}
-\item{boot_pvals}{Vector of bootstrap p-values.}
+\item{btest}{Logical indicating which bootstrap method was used.}
+\item{boot_pvals}{Vector of bootstrap p-values (if \code{btest=FALSE}).}
+\item{boot_tco}{Vector of bootstrap t-statistics (if \code{btest=TRUE}).}
 \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 }
 \description{
@@ -54,15 +62,23 @@ series length and number of available CPU cores.
 
 The bootstrap procedure:
 \enumerate{
-\item Fit \code{\link[=co_tas_fast]{co_tas_fast()}} to the original data to obtain the AR model
-\item Generate \code{nb} bootstrap series from AR(phi) with no trend in parallel
-\item For each bootstrap series, compute the p-value using C++ CO-TAS
-\item Bootstrap p-value = proportion of bootstrap p-values smaller
-than the observed p-value
+\item Fit \code{\link[=co_tas_fast]{co_tas_fast()}} to the original data to obtain the test statistic
+\item Fit AR(p) model directly to the original data for the null model
+\item Generate \code{nb} bootstrap series from AR(phi_null) with no trend in parallel
+\item For each bootstrap series:
+\itemize{
+\item If \code{btest=FALSE}: compute p-value using C++ CO-TAS
+\item If \code{btest=TRUE}: compute t-statistic using C++ CO-TAS
+}
+\item Compute bootstrap p-value:
+\itemize{
+\item If \code{btest=FALSE}: proportion of bootstrap p-values <= observed
+\item If \code{btest=TRUE}: proportion with |t| >= |observed t|
+}
 }
 
-This provides a more accurate p-value than the asymptotic version
-when sample sizes are small or autocorrelation is strong.
+The t-statistic bootstrap (\code{btest=TRUE}) can be more powerful when the
+null distribution of p-values is not uniform.
 
 \strong{Performance Tuning:}
 For optimal parallel performance, you may want to disable BLAS multi-threading
@@ -81,9 +97,13 @@ t <- 1:n
 z <- arima.sim(list(ar = 0.7), n = n)
 x <- 5 + 0.1 * t + z
 
-# Fast bootstrap trend test
+# Fast bootstrap trend test using p-values (default)
 result <- co_tas_boot_fast(x, nb = 199, seed = 42)
 print(result)
+
+# Fast bootstrap using t-statistics
+result_t <- co_tas_boot_fast(x, nb = 199, btest = TRUE, seed = 42)
+print(result_t)
 }
 
 \dontrun{

@@ -9,15 +9,21 @@
 #' @param maxp Maximum AR order for model selection. Default is 5.
 #' @param type Character. Information criterion for order selection:
 #'   `"aic"`, `"aicc"`, or `"bic"`. Default is `"aic"`.
+#' @param btest Logical. If `FALSE` (default), bootstrap using p-values.
+#'   If `TRUE`, bootstrap using t-statistics (comparing absolute values).
 #' @param seed Optional integer seed for reproducibility. Default is NULL.
 #'
 #' @return A list with class `"co_tas_boot"` containing:
 #'   \item{pvalue}{Bootstrap p-value for test of H0: no trend.}
 #'   \item{tco}{t-statistic from the original data.}
 #'   \item{pvalue_asymptotic}{Asymptotic p-value from [co_tas_fast()].}
-#'   \item{phi}{AR coefficients from the original fit.}
+#'   \item{phi}{AR coefficients from the CO-TAS fit (differenced series model).}
+#'   \item{phi_null}{AR coefficients from null model (fit to original data).}
+#'   \item{vara}{Innovation variance from null model.}
 #'   \item{nb}{Number of bootstrap replicates used.}
-#'   \item{boot_pvals}{Vector of bootstrap p-values.}
+#'   \item{btest}{Logical indicating which bootstrap method was used.}
+#'   \item{boot_pvals}{Vector of bootstrap p-values (if `btest=FALSE`).}
+#'   \item{boot_tco}{Vector of bootstrap t-statistics (if `btest=TRUE`).}
 #'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
 #'
 #' @details
@@ -35,15 +41,23 @@
 #'
 #' The bootstrap procedure:
 #' \enumerate{
-#'   \item Fit [co_tas_fast()] to the original data to obtain the AR model
-#'   \item Generate `nb` bootstrap series from AR(phi) with no trend in parallel
-#'   \item For each bootstrap series, compute the p-value using C++ CO-TAS
-#'   \item Bootstrap p-value = proportion of bootstrap p-values smaller
-#'     than the observed p-value
+#'   \item Fit [co_tas_fast()] to the original data to obtain the test statistic
+#'   \item Fit AR(p) model directly to the original data for the null model
+#'   \item Generate `nb` bootstrap series from AR(phi_null) with no trend in parallel
+#'   \item For each bootstrap series:
+#'     \itemize{
+#'       \item If `btest=FALSE`: compute p-value using C++ CO-TAS
+#'       \item If `btest=TRUE`: compute t-statistic using C++ CO-TAS
+#'     }
+#'   \item Compute bootstrap p-value:
+#'     \itemize{
+#'       \item If `btest=FALSE`: proportion of bootstrap p-values <= observed
+#'       \item If `btest=TRUE`: proportion with |t| >= |observed t|
+#'     }
 #' }
 #'
-#' This provides a more accurate p-value than the asymptotic version
-#' when sample sizes are small or autocorrelation is strong.
+#' The t-statistic bootstrap (`btest=TRUE`) can be more powerful when the
+#' null distribution of p-values is not uniform.
 #'
 #' **Performance Tuning:**
 #' For optimal parallel performance, you may want to disable BLAS multi-threading
@@ -73,9 +87,13 @@
 #' z <- arima.sim(list(ar = 0.7), n = n)
 #' x <- 5 + 0.1 * t + z
 #'
-#' # Fast bootstrap trend test
+#' # Fast bootstrap trend test using p-values (default)
 #' result <- co_tas_boot_fast(x, nb = 199, seed = 42)
 #' print(result)
+#'
+#' # Fast bootstrap using t-statistics
+#' result_t <- co_tas_boot_fast(x, nb = 199, btest = TRUE, seed = 42)
+#' print(result_t)
 #' }
 #'
 #' \dontrun{
@@ -92,6 +110,7 @@
 #' @export
 co_tas_boot_fast <- function(x, nb = 399L, maxp = 5L,
                               type = c("aic", "aicc", "bic"),
+                              btest = FALSE,
                               seed = NULL) {
 
   type <- match.arg(type)
@@ -111,6 +130,9 @@ co_tas_boot_fast <- function(x, nb = 399L, maxp = 5L,
   }
   if (maxp > 20L) {
     stop("`maxp` must be <= 20 (C++ buffer limit)", call. = FALSE)
+  }
+  if (!is.logical(btest) || length(btest) != 1 || is.na(btest)) {
+    stop("`btest` must be TRUE or FALSE", call. = FALSE)
   }
 
   n <- length(x)
@@ -132,39 +154,59 @@ co_tas_boot_fast <- function(x, nb = 399L, maxp = 5L,
   # Generate bootstrap seeds upfront (R's RNG, single-threaded)
   boot_seeds <- as.numeric(sample.int(.Machine$integer.max, nb))
 
-  # Step 1: Fit co_tas_fast to original data
+  # Step 1: Fit co_tas_fast to original data for test statistic
   result <- co_tas_fast(x, maxp = maxp, type = type)
   pval_obs <- result$pvalue
   tco_obs <- result$tco
   phi <- result$phi
-  p <- result$p
 
-  # Get variance for AR generation (use Burg fit)
-  fit <- burg_aic_select_cpp(x, maxp, type)
-  vara <- fit$vara
+  # Step 2: Fit AR to ORIGINAL data for null hypothesis
+  # (Not the differenced series used in co_tas)
+  null_fit <- burg_aic_select_cpp(x, maxp, type)
+  phi_null <- as.numeric(null_fit$phi)
+  vara <- null_fit$vara
 
   # Handle AR(0) case
-  if (length(phi) == 0) {
-    phi <- numeric(0)
+  if (length(phi_null) == 0) {
+    phi_null <- numeric(0)
   }
 
-  # Compute optimal grain size for TBB parallelization
+  # Step 3: Bootstrap under null hypothesis (no trend)
   num_threads <- RcppParallel::defaultNumThreads()
   grain_size <- max(16L, as.integer(nb / (4L * num_threads)))
 
-  # Step 2: Bootstrap under null hypothesis (no trend) in parallel
-  boot_pvals <- co_tas_boot_kernel_cpp(
-    n = n,
-    phi = phi,
-    vara = vara,
-    seeds = boot_seeds,
-    maxp = maxp,
-    type = type,
-    grain_size = grain_size
-  )
+  if (!btest) {
+    # Bootstrap using p-values
+    boot_pvals <- co_tas_boot_kernel_cpp(
+      n = n,
+      phi = phi_null,
+      vara = vara,
+      seeds = boot_seeds,
+      maxp = maxp,
+      type = type,
+      grain_size = grain_size
+    )
 
-  # Step 3: Bootstrap p-value = proportion of boot p-values < observed
-  pvalue_boot <- sum(boot_pvals < pval_obs) / nb
+    # Bootstrap p-value = proportion of boot p-values <= observed
+    pvalue_boot <- sum(boot_pvals <= pval_obs) / nb
+    boot_tco <- NULL
+
+  } else {
+    # Bootstrap using t-statistics
+    boot_tco <- co_tas_boot_tstat_kernel_cpp(
+      n = n,
+      phi = phi_null,
+      vara = vara,
+      seeds = boot_seeds,
+      maxp = maxp,
+      type = type,
+      grain_size = grain_size
+    )
+
+    # Bootstrap p-value = proportion with |t| >= |observed t|
+    pvalue_boot <- sum(abs(boot_tco) >= abs(tco_obs)) / nb
+    boot_pvals <- NULL
+  }
 
   # Return result with same structure as co_tas_boot for compatibility
   result_boot <- list(
@@ -172,8 +214,12 @@ co_tas_boot_fast <- function(x, nb = 399L, maxp = 5L,
     tco = tco_obs,
     pvalue_asymptotic = pval_obs,
     phi = phi,
+    phi_null = phi_null,
+    vara = vara,
     nb = nb,
+    btest = btest,
     boot_pvals = boot_pvals,
+    boot_tco = boot_tco,
     boot_seeds = boot_seeds
   )
 

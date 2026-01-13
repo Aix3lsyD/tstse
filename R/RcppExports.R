@@ -99,20 +99,6 @@ co_tas_cpp <- function(x, maxp = 5L, type = "aic") {
     .Call(`_tstse_co_tas_cpp`, x, maxp, type)
 }
 
-#' CO-TAS P-value Only (C++ implementation)
-#'
-#' Returns only the p-value, for use in R-level bootstrap loops.
-#'
-#' @param x Numeric vector, the time series.
-#' @param maxp Integer, maximum AR order (default 5).
-#' @param type String, information criterion: "aic", "aicc", or "bic".
-#' @return Double, the p-value.
-#' @keywords internal
-#' @noRd
-co_tas_pvalue_cpp <- function(x, maxp = 5L, type = "aic") {
-    .Call(`_tstse_co_tas_pvalue_cpp`, x, maxp, type)
-}
-
 #' Cochrane-Orcutt t-statistic (C++ implementation)
 #'
 #' Computes the Cochrane-Orcutt t-statistic for testing H0: slope = 0.
@@ -175,6 +161,26 @@ ols_detrend_cpp <- function(x) {
 #' @noRd
 co_tas_boot_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, type = "aic", grain_size = 1L) {
     .Call(`_tstse_co_tas_boot_kernel_cpp`, n, phi, vara, seeds, maxp, type, grain_size)
+}
+
+#' CO-TAS t-statistic Bootstrap Kernel (C++ Implementation)
+#'
+#' Runs the bootstrap loop in parallel using TBB. Each iteration generates an
+#' AR series under the null hypothesis (no trend) and computes the CO-TAS
+#' t-statistic. Used when btest=TRUE.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds, one per bootstrap iteration.
+#' @param maxp Integer, maximum AR order for CO-TAS test.
+#' @param type String, IC for AR selection: "aic", "aicc", "bic".
+#' @param grain_size Integer, minimum iterations per thread (default 1).
+#' @return Numeric vector of bootstrap t-statistics.
+#' @keywords internal
+#' @noRd
+co_tas_boot_tstat_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, type = "aic", grain_size = 1L) {
+    .Call(`_tstse_co_tas_boot_tstat_kernel_cpp`, n, phi, vara, seeds, maxp, type, grain_size)
 }
 
 #' CO t-statistic (kernel implementation)
