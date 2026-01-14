@@ -503,3 +503,52 @@ test_that("wbg_boot_garch works with custom stat_fn", {
   expect_s3_class(result, "wbg_boot_garch")
   expect_false(is.na(result$pvalue))
 })
+
+
+# ==============================================================================
+# Parallel equivalence tests
+# ==============================================================================
+
+test_that("wbg_boot_garch parallel matches sequential", {
+  skip_if_no_rugarch()
+  skip_on_cran()
+  skip_if(parallel::detectCores(logical = FALSE) < 2, "Not enough cores")
+
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 150)
+  stat_fn <- make_stat_ols_t()
+
+  result_seq <- wbg_boot_garch(x, stat_fn, nb = 29, p_max = 2,
+                                cores = 1L, seed = 456, verbose = FALSE)
+  result_par <- wbg_boot_garch(x, stat_fn, nb = 29, p_max = 2,
+                                cores = 2L, seed = 456, verbose = FALSE)
+
+  # Results should be identical with same seed
+  expect_equal(result_seq$obs_stat, result_par$obs_stat)
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+  expect_equal(result_seq$boot_dist, result_par$boot_dist)
+  expect_equal(result_seq$boot_seeds, result_par$boot_seeds)
+})
+
+test_that("wbg_boot_garch COBA parallel matches sequential", {
+  skip_if_no_rugarch()
+  skip_on_cran()
+  skip_if(parallel::detectCores(logical = FALSE) < 2, "Not enough cores")
+
+  set.seed(123)
+  x <- arima.sim(list(ar = 0.6), n = 150)
+  stat_fn <- make_stat_ols_t()
+
+  result_seq <- wbg_boot_garch(x, stat_fn, nb = 19, p_max = 2, bootadj = TRUE,
+                                cores = 1L, seed = 456, verbose = FALSE)
+  result_par <- wbg_boot_garch(x, stat_fn, nb = 19, p_max = 2, bootadj = TRUE,
+                                cores = 2L, seed = 456, verbose = FALSE)
+
+  # Results should be identical with same seed
+  expect_equal(result_seq$obs_stat, result_par$obs_stat)
+  expect_equal(result_seq$pvalue, result_par$pvalue)
+  expect_equal(result_seq$boot_dist, result_par$boot_dist)
+  expect_equal(result_seq$pvalue_adj, result_par$pvalue_adj)
+  expect_equal(result_seq$boot_seeds, result_par$boot_seeds)
+  expect_equal(result_seq$boot_seeds_adj, result_par$boot_seeds_adj)
+})

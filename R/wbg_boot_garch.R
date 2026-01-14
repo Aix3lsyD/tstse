@@ -293,7 +293,8 @@ wbg_boot_garch <- function(x, stat_fn = make_stat_co(), nb = 399L, p_max = 5L,
     n = n,
     nb = nb_actual,
     ic = best_ic,
-    criterion = criterion
+    criterion = criterion,
+    boot_seeds = boot_seeds
   )
 
   # --- COBA Adjustment (Second Bootstrap) ---
@@ -354,6 +355,7 @@ wbg_boot_garch <- function(x, stat_fn = make_stat_co(), nb = 399L, p_max = 5L,
         result$pvalue_adj <- pvalue_adj
         result$adj_factor <- adj_factor
         result$median_coef <- median_coef
+        result$boot_seeds_adj <- boot_seeds_adj
       }
     }
   }
