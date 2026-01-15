@@ -119,8 +119,10 @@ test_that("factor_comp sum of components approximates original", {
   set.seed(777)
   x <- arima.sim(model = list(ar = c(0.5, -0.3)), n = 100)
 
-  # Extract all factors
-  result <- factor_comp(x, p = 2, n_comp = 2, plot = FALSE)
+  # Extract all factors (may warn if n_comp exceeds actual factor count)
+  result <- suppressWarnings(
+    factor_comp(x, p = 2, n_comp = 2, plot = FALSE)
+  )
 
   # Sum of components should approximate a filtered version of x
   # (not exact equality due to the decomposition)

@@ -44,11 +44,16 @@ Set to 0 to use all available cores.}
 A list containing:
 \item{p}{AR order selected for the series under null hypothesis.}
 \item{phi}{AR coefficients for the null model.}
+\item{vara}{Innovation variance for the null model.}
 \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
+\item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs).}
+\item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs).}
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 \item{boot_tstats}{Numeric vector of bootstrap t-statistics.}
+\item{n}{Length of input series.}
 \item{nb}{Number of bootstrap replicates used.}
 \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+\item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 }
 \description{
 Bootstrap hypothesis test for trend in time series with autocorrelated

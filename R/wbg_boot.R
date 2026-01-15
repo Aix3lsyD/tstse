@@ -24,11 +24,16 @@
 #' @return A list containing:
 #'   \item{p}{AR order selected for the series under null hypothesis.}
 #'   \item{phi}{AR coefficients for the null model.}
+#'   \item{vara}{Innovation variance for the null model.}
 #'   \item{pvalue}{Bootstrap p-value for trend test (two-sided).}
+#'   \item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs).}
+#'   \item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs).}
 #'   \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 #'   \item{boot_tstats}{Numeric vector of bootstrap t-statistics.}
+#'   \item{n}{Length of input series.}
 #'   \item{nb}{Number of bootstrap replicates used.}
 #'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+#'   \item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 #'
 #' @details
 #' The WBG bootstrap test addresses the problem that standard t-tests for
@@ -134,6 +139,7 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
   }
   p_null <- x_aic$p
   phi_null <- x_aic$phi
+  vara_null <- x_aic$vara
 
   # Step 3: Bootstrap loop
   # NOTE: boot_fn runs inside parallel workers.
@@ -163,17 +169,28 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     boot_tstats <- vapply(seq_len(nb), boot_fn, numeric(1))
   }
 
-  # Step 4: Compute p-value with plus-one correction
+  # Step 4: Compute p-values with plus-one correction
   # Per Davison & Hinkley (1997): ensures p > 0 and treats observed as "one of" the samples
   pvalue <- (sum(abs(boot_tstats) >= abs(tco_obs)) + 1) / (nb + 1)
+  pvalue_upper <- (sum(boot_tstats >= tco_obs) + 1) / (nb + 1)
+  pvalue_lower <- (sum(boot_tstats <= tco_obs) + 1) / (nb + 1)
+
+  # Asymptotic p-value (two-sided, standard normal)
+  pvalue_asymp <- 2 * pnorm(-abs(tco_obs))
 
   list(
-    p           = p_null,
-    phi         = phi_null,
-    pvalue      = pvalue,
-    tco_obs     = tco_obs,
-    boot_tstats = boot_tstats,
-    nb          = nb,
-    boot_seeds  = boot_seeds
+    p            = p_null,
+    phi          = phi_null,
+    vara         = vara_null,
+    pvalue       = pvalue,
+    pvalue_upper = pvalue_upper,
+    pvalue_lower = pvalue_lower,
+    pvalue_asymp = pvalue_asymp,
+    tco_obs      = tco_obs,
+    boot_tstats  = boot_tstats,
+    n            = n,
+    nb           = nb,
+    boot_seeds   = boot_seeds,
+    master_seed  = seed
   )
 }

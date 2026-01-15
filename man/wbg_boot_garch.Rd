@@ -78,6 +78,8 @@ An object of class \code{"wbg_boot_garch"} containing:
 \item{n}{Sample size.}
 \item{nb}{Number of bootstrap replicates.}
 \item{ic}{Information criterion value of selected model.}
+\item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+\item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 
 If \code{bootadj = TRUE}, also includes:
 \item{obs_stat_adj}{COBA-adjusted observed statistic.}

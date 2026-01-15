@@ -282,6 +282,9 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   pvalue_upper <- (sum(boot_tstats >= tco_obs) + 1) / (nb + 1)  # P(T* >= T_obs)
   pvalue_lower <- (sum(boot_tstats <= tco_obs) + 1) / (nb + 1)  # P(T* <= T_obs)
 
+  # Asymptotic p-value (two-sided, standard normal)
+  pvalue_asymp <- 2 * pnorm(-abs(tco_obs))
+
   # Build result
   result <- list(
     p           = p_null,
@@ -290,6 +293,7 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     pvalue      = pvalue,
     pvalue_upper = pvalue_upper,
     pvalue_lower = pvalue_lower,
+    pvalue_asymp = pvalue_asymp,
     tco_obs     = tco_obs,
     boot_tstats = boot_tstats,
     boot_seeds  = boot_seeds,

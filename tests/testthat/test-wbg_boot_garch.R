@@ -183,8 +183,11 @@ test_that("wbg_boot_garch detects trend in trending series", {
   x <- 0.15 * (1:250) + arima.sim(list(ar = 0.5), n = 250)
   stat_fn <- make_stat_ols_t()
 
-  result <- wbg_boot_garch(x, stat_fn, nb = 99, p_max = 3,
-                           seed = 456, verbose = FALSE)
+  # Warnings expected: optim convergence and non-stationary AR when testing trending series
+  result <- suppressWarnings(
+    wbg_boot_garch(x, stat_fn, nb = 99, p_max = 3,
+                   seed = 456, verbose = FALSE)
+  )
 
   # Should reject for series with strong trend
   expect_lt(result$pvalue, 0.10)

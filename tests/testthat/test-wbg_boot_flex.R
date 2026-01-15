@@ -26,6 +26,7 @@ test_that("wbg_boot_flex returns correct structure", {
   expect_true("pvalue" %in% names(result))
   expect_true("pvalue_upper" %in% names(result))
   expect_true("pvalue_lower" %in% names(result))
+  expect_true("pvalue_asymp" %in% names(result))
   expect_true("ar_order" %in% names(result))
   expect_true("ar_phi" %in% names(result))
   expect_true("n" %in% names(result))

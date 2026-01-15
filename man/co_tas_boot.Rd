@@ -41,16 +41,20 @@ Default is 1 (sequential). Set to 0 to use all available cores.}
 \value{
 A list with class \code{"co_tas_boot"} containing:
 \item{pvalue}{Bootstrap p-value for test of H0: no trend.}
+\item{pvalue_upper}{Upper-tail p-value (only if \code{btest=TRUE}, NA otherwise).}
+\item{pvalue_lower}{Lower-tail p-value (only if \code{btest=TRUE}, NA otherwise).}
 \item{tco}{t-statistic from the original data.}
 \item{pvalue_asymptotic}{Asymptotic p-value from \code{\link[=co_tas]{co_tas()}}.}
 \item{phi}{AR coefficients from the CO-TAS fit (differenced series model).}
 \item{phi_null}{AR coefficients from null model (fit to original data).}
 \item{vara}{Innovation variance from null model.}
+\item{n}{Length of input series.}
 \item{nb}{Number of bootstrap replicates used.}
 \item{btest}{Logical indicating which bootstrap method was used.}
 \item{boot_pvals}{Vector of bootstrap p-values (if \code{btest=FALSE}).}
 \item{boot_tco}{Vector of bootstrap t-statistics (if \code{btest=TRUE}).}
 \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+\item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 }
 \description{
 Performs a bootstrap version of the Cochrane-Orcutt trend test with
