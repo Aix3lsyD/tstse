@@ -1,10 +1,10 @@
 ## Makevars.win.in for tstse package (Windows)
-## This file is processed by configure.win to create Makevars.win
 
 CXX_STD = CXX17
 
 ## Compile flags: Armadillo
-PKG_CXXFLAGS = -DARMA_USE_CURRENT
+PKG_CXXFLAGS += -DARMA_USE_CURRENT
 
-## Link flags: RcppParallel + TBB
-PKG_LIBS = -L@RCPP_PARALLEL_SO_PATH@$(R_ARCH) -lRcppParallel @RCPP_PARALLEL_LIBS@
+## Link flags: RcppParallel + TBB + BLAS/LAPACK
+PKG_LIBS += -L@RCPP_PARALLEL_SO_PATH@$(R_ARCH) -lRcppParallel @RCPP_PARALLEL_LIBS@ \
+            $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
