@@ -38,10 +38,12 @@
 #'   \item{pvalue_lower}{Lower-tail p-value.}
 #'   \item{ar_order}{Selected AR order under null.}
 #'   \item{ar_phi}{AR coefficients under null.}
+#'   \item{ar_vara}{Innovation variance under null (NA if MLE method used).}
 #'   \item{ar_method}{AR estimation method used.}
 #'   \item{n}{Sample size.}
 #'   \item{nb}{Number of bootstrap replicates.}
 #'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+#'   \item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 #'
 #'   If `bootadj = TRUE`, also includes:
 #'   \item{obs_stat_adj}{COBA-adjusted observed statistic.}
@@ -166,9 +168,11 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
   if (ar_method == "burg") {
     ar_fit <- aic_burg(x, p = seq_len(p_max), type = criterion)
     ar_method_used <- "burg"
+    ar_vara <- ar_fit$vara
   } else {
     ar_fit <- aic_ar_mle(x, p_max = p_max, criterion = criterion)
     ar_method_used <- "mle"
+    ar_vara <- NA_real_  # MLE doesn't return vara directly
   }
   ar_phi <- ar_fit$phi
   ar_p <- ar_fit$p
@@ -226,18 +230,24 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
   pvalue_upper <- (sum(boot_stats >= obs_stat) + 1) / (nb + 1)
   pvalue_lower <- (sum(boot_stats <= obs_stat) + 1) / (nb + 1)
 
+  # Asymptotic p-value (two-sided, standard normal)
+  pvalue_asymp <- 2 * pnorm(-abs(obs_stat))
+
   result <- list(
     obs_stat = obs_stat,
     boot_dist = boot_stats,
     pvalue = pvalue_two,
     pvalue_upper = pvalue_upper,
     pvalue_lower = pvalue_lower,
+    pvalue_asymp = pvalue_asymp,
     ar_order = ar_p,
     ar_phi = ar_phi,
+    ar_vara = ar_vara,
     ar_method = ar_method_used,
     n = n,
     nb = nb,
-    boot_seeds = boot_seeds
+    boot_seeds = boot_seeds,
+    master_seed = seed
   )
 
   # --- COBA Adjustment (Second Bootstrap) ---

@@ -17,7 +17,12 @@ RoxygenNote: 7.3.3
 Suggests:
     testthat (>= 3.0.0),
     cli,
+    DBI,
+    DT,
+    duckdb,
+    jsonlite,
     MASS,
+    shiny,
     PolynomF,
     RhpcBLASctl,
     WeightedPortTest,

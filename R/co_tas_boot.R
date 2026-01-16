@@ -22,16 +22,20 @@
 #'
 #' @return A list with class `"co_tas_boot"` containing:
 #'   \item{pvalue}{Bootstrap p-value for test of H0: no trend.}
+#'   \item{pvalue_upper}{Upper-tail p-value (only if `btest=TRUE`, NA otherwise).}
+#'   \item{pvalue_lower}{Lower-tail p-value (only if `btest=TRUE`, NA otherwise).}
 #'   \item{tco}{t-statistic from the original data.}
 #'   \item{pvalue_asymptotic}{Asymptotic p-value from [co_tas()].}
 #'   \item{phi}{AR coefficients from the CO-TAS fit (differenced series model).}
 #'   \item{phi_null}{AR coefficients from null model (fit to original data).}
 #'   \item{vara}{Innovation variance from null model.}
+#'   \item{n}{Length of input series.}
 #'   \item{nb}{Number of bootstrap replicates used.}
 #'   \item{btest}{Logical indicating which bootstrap method was used.}
 #'   \item{boot_pvals}{Vector of bootstrap p-values (if `btest=FALSE`).}
 #'   \item{boot_tco}{Vector of bootstrap t-statistics (if `btest=TRUE`).}
 #'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+#'   \item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 #'
 #' @details
 #' The bootstrap procedure:
@@ -162,25 +166,33 @@ co_tas_boot <- function(x, nb = 399L, maxp = 5L,
     boot_tco <- boot_values
     boot_pvals <- NULL
     pvalue_boot <- sum(abs(boot_tco) >= abs(tco_obs)) / nb
+    pvalue_upper <- sum(boot_tco >= tco_obs) / nb
+    pvalue_lower <- sum(boot_tco <= tco_obs) / nb
   } else {
     boot_pvals <- boot_values
     boot_tco <- NULL
     pvalue_boot <- sum(boot_pvals <= pval_obs) / nb
+    pvalue_upper <- NA_real_  # Not applicable for p-value bootstrap
+    pvalue_lower <- NA_real_
   }
 
   # Return result
   result_boot <- list(
     pvalue = pvalue_boot,
+    pvalue_upper = pvalue_upper,
+    pvalue_lower = pvalue_lower,
     tco = tco_obs,
     pvalue_asymptotic = pval_obs,
     phi = phi,
     phi_null = phi_null,
     vara = vara,
+    n = n,
     nb = nb,
     btest = btest,
     boot_pvals = boot_pvals,
     boot_tco = boot_tco,
-    boot_seeds = boot_seeds
+    boot_seeds = boot_seeds,
+    master_seed = seed
   )
 
   class(result_boot) <- "co_tas_boot"

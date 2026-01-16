@@ -1,24 +1,27 @@
 # tests/testthat/test-utils-parallel.R
 
 test_that("get_cores returns valid core count", {
+  # detectCores may return NA on some systems
+  physical_cores <- parallel::detectCores(logical = FALSE)
 
   # Explicit values
   expect_equal(get_cores(1), 1L)
-  expect_equal(get_cores(2), min(2L, parallel::detectCores(logical = FALSE)))
 
-  # Zero means all
-  all_cores <- parallel::detectCores(logical = FALSE)
-  if (!is.na(all_cores)) {
-    expect_equal(get_cores(0), all_cores)
+  # Only test if detectCores returns a valid value
+  if (!is.na(physical_cores)) {
+    expect_equal(get_cores(2), min(2L, physical_cores))
+
+    # Zero means all
+    expect_equal(get_cores(0), physical_cores)
+
+    # NULL uses option
+    old_opt <- getOption("tstse.cores")
+    options(tstse.cores = 2)
+    expect_equal(get_cores(NULL), min(2L, physical_cores))
+    options(tstse.cores = old_opt)
   }
 
-  # NULL uses option
-  old_opt <- getOption("tstse.cores")
-  options(tstse.cores = 2)
-  expect_equal(get_cores(NULL), min(2L, parallel::detectCores(logical = FALSE)))
-  options(tstse.cores = old_opt)
-
-  # Default when no option set
+  # Default when no option set (always works)
   options(tstse.cores = NULL)
   expect_equal(get_cores(NULL), 1L)
 })

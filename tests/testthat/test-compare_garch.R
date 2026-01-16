@@ -225,14 +225,21 @@ test_that("compare_garch warns on NA values", {
   y <- rnorm(300)
   y[50] <- NA
 
-  # Should warn about NA values (may also fail to converge, which is expected)
-  expect_warning(
-    tryCatch(
+  # Capture warnings - expect NA values warning (rugarch may also issue convergence warnings)
+  warnings_issued <- character(0)
+  tryCatch(
+    withCallingHandlers(
       compare_garch(y, arch_range = 1, garch_range = 1, parallel = FALSE),
-      error = function(e) NULL
+      warning = function(w) {
+        warnings_issued <<- c(warnings_issued, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
     ),
-    "NA values"
+    error = function(e) NULL
   )
+
+  # Check that at least one warning mentions NA values
+  expect_true(any(grepl("NA values", warnings_issued)))
 })
 
 
@@ -315,8 +322,10 @@ test_that("compare_garch handles convergence failures gracefully", {
   set.seed(42)
   y <- rnorm(50)
 
-  # Should not error, just fit what it can
-  result <- compare_garch(y, arch_range = 1:2, garch_range = 0:1, parallel = FALSE)
+  # Should not error, just fit what it can (suppress rugarch sample size warnings)
+  result <- suppressWarnings(
+    compare_garch(y, arch_range = 1:2, garch_range = 0:1, parallel = FALSE)
+  )
   expect_s3_class(result, "garch_comparison")
   expect_gte(nrow(result$comparison), 1)
 })

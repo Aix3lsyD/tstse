@@ -69,10 +69,12 @@ An object of class \code{"wbg_boot_flex"} containing:
 \item{pvalue_lower}{Lower-tail p-value.}
 \item{ar_order}{Selected AR order under null.}
 \item{ar_phi}{AR coefficients under null.}
+\item{ar_vara}{Innovation variance under null (NA if MLE method used).}
 \item{ar_method}{AR estimation method used.}
 \item{n}{Sample size.}
 \item{nb}{Number of bootstrap replicates.}
 \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+\item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 
 If \code{bootadj = TRUE}, also includes:
 \item{obs_stat_adj}{COBA-adjusted observed statistic.}

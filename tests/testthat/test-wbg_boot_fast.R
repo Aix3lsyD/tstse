@@ -16,6 +16,7 @@ test_that("wbg_boot_fast returns correct structure", {
   expect_true("phi" %in% names(result))
   expect_true("vara" %in% names(result))
   expect_true("pvalue" %in% names(result))
+  expect_true("pvalue_asymp" %in% names(result))
   expect_true("tco_obs" %in% names(result))
   expect_true("boot_tstats" %in% names(result))
   expect_true("n" %in% names(result))

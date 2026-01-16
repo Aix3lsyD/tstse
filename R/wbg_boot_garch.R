@@ -42,6 +42,8 @@
 #'   \item{n}{Sample size.}
 #'   \item{nb}{Number of bootstrap replicates.}
 #'   \item{ic}{Information criterion value of selected model.}
+#'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.}
+#'   \item{master_seed}{The seed parameter used to generate boot_seeds (for reproducibility).}
 #'
 #'   If `bootadj = TRUE`, also includes:
 #'   \item{obs_stat_adj}{COBA-adjusted observed statistic.}
@@ -294,7 +296,8 @@ wbg_boot_garch <- function(x, stat_fn = make_stat_co(), nb = 399L, p_max = 5L,
     nb = nb_actual,
     ic = best_ic,
     criterion = criterion,
-    boot_seeds = boot_seeds
+    boot_seeds = boot_seeds,
+    master_seed = seed
   )
 
   # --- COBA Adjustment (Second Bootstrap) ---
