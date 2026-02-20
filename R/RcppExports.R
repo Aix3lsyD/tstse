@@ -192,11 +192,13 @@ co_tas_boot_tstat_kernel_cpp <- function(n, phi, vara, seeds, maxp = 5L, type = 
 #' @param x Numeric vector, the time series.
 #' @param maxp Integer, maximum AR order for model selection.
 #' @param criterion String, information criterion: "aic", "aicc", or "bic".
+#' @param min_p Integer, minimum AR order for residual model (0 allows AR(0),
+#'   1 matches paper's CO procedure). Default 0 for backward compatibility.
 #' @return Double, Cochrane-Orcutt t-statistic.
 #' @keywords internal
 #' @noRd
-co_tstat_pure_cpp <- function(x, maxp = 5L, criterion = "aic") {
-    .Call(`_tstse_co_tstat_pure_cpp`, x, maxp, criterion)
+co_tstat_pure_cpp <- function(x, maxp = 5L, criterion = "aic", min_p = 0L) {
+    .Call(`_tstse_co_tstat_pure_cpp`, x, maxp, criterion, min_p)
 }
 
 #' Fast AR Generation with External Seed (for parallel use)
@@ -226,11 +228,12 @@ gen_ar_seeded_cpp <- function(n, phi, vara, rng_seed) {
 #' @param maxp Integer, maximum AR order for CO test.
 #' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
 #' @param grain_size Integer, minimum iterations per thread (default 1).
+#' @param min_p Integer, minimum AR order for CO residual model (default 0).
 #' @return Numeric vector of bootstrap t-statistics.
 #' @keywords internal
 #' @noRd
-wbg_bootstrap_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L) {
-    .Call(`_tstse_wbg_bootstrap_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size)
+wbg_bootstrap_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L, min_p = 0L) {
+    .Call(`_tstse_wbg_bootstrap_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size, min_p)
 }
 
 #' WBG Bootstrap COBA Kernel (C++ Implementation)
@@ -244,11 +247,12 @@ wbg_bootstrap_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, crite
 #' @param maxp Integer, maximum AR order for CO test and AR fitting.
 #' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
 #' @param grain_size Integer, minimum iterations per thread (default 1).
+#' @param min_p Integer, minimum AR order for CO residual model (default 0).
 #' @return List with tstats, phi1_values, phi_matrix, orders.
 #' @keywords internal
 #' @noRd
-wbg_bootstrap_coba_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L) {
-    .Call(`_tstse_wbg_bootstrap_coba_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size)
+wbg_bootstrap_coba_kernel_grain_cpp <- function(n, phi, vara, seeds, maxp = 5L, criterion = "aic", grain_size = 1L, min_p = 0L) {
+    .Call(`_tstse_wbg_bootstrap_coba_kernel_grain_cpp`, n, phi, vara, seeds, maxp, criterion, grain_size, min_p)
 }
 
 #' Truncated Polynomial Convolution (C++ implementation)

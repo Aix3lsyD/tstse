@@ -33,12 +33,13 @@ void gen_ar_into(arma::vec& out, const arma::vec& phi, double vara, uint64_t rng
 void gen_ar_into_precomputed(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed);
 void gen_ar_into_ws(arma::vec& out, const arma::vec& phi, double sd, int burn, uint64_t rng_seed, arma::vec& burn_buf);
 int calc_ar_burnin_cpp(const arma::vec& phi, int n);
-double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion);
+double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion,
+                     int min_p = 0);
 BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string& criterion, int min_p = 0);
 
 // Forward declarations - workspace-aware functions (ZERO allocations)
 double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
-                   CoBootstrapWorkspace& ws);
+                   CoBootstrapWorkspace& ws, int min_p = 0);
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp, CriterionType ic_type,
                                CoBootstrapWorkspace& ws, int min_p = 0);
 
@@ -54,6 +55,7 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
     const double vara;
     const int maxp;
     const CriterionType ic_type;  // Pre-converted enum (no string comparison in hot path)
+    const int min_p;              // Minimum AR order for CO residual model
     const std::vector<uint64_t>& seeds;
 
     // Precomputed AR generation parameters (constant, computed once)
@@ -65,11 +67,11 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
 
     // Constructor - precomputes sd and burn for efficiency
     WBGBootstrapWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
-                       CriterionType ic_type_,
+                       CriterionType ic_type_, int min_p_,
                        const std::vector<uint64_t>& seeds_,
                        Rcpp::NumericVector results_)
         : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
-          seeds(seeds_),
+          min_p(min_p_), seeds(seeds_),
           sd(std::sqrt(vara_)),
           burn(phi_.n_elem == 0 ? 0 : calc_ar_burnin_cpp(phi_, n_)),
           results(results_) {}
@@ -93,7 +95,7 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
             gen_ar_into_ws(ws.x_buf, phi, sd, burn, seeds[b], ws.burn_buf);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
-            results[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
+            results[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws, min_p);
         }
     }
 };
@@ -114,6 +116,7 @@ struct WBGBootstrapWorker : public RcppParallel::Worker {
 //' @param maxp Integer, maximum AR order for CO test.
 //' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
 //' @param grain_size Integer, minimum iterations per thread (default 1).
+//' @param min_p Integer, minimum AR order for CO residual model (default 0).
 //' @return Numeric vector of bootstrap t-statistics.
 //' @keywords internal
 //' @noRd
@@ -125,7 +128,8 @@ Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(
     const std::vector<uint64_t>& seeds,
     int maxp = 5,
     std::string criterion = "aic",
-    std::size_t grain_size = 1
+    std::size_t grain_size = 1,
+    int min_p = 0
 ) {
     // Validate AR order constraints (C++ buffer limit is MAX_P=20)
     if (maxp > 20) {
@@ -141,7 +145,7 @@ Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(
     // Convert criterion string to enum ONCE
     CriterionType ic_type = criterion_from_string(criterion);
 
-    WBGBootstrapWorker worker(n, phi, vara, maxp, ic_type, seeds, results);
+    WBGBootstrapWorker worker(n, phi, vara, maxp, ic_type, min_p, seeds, results);
     RcppParallel::parallelFor(0, nb, worker, grain_size);
 
     return results;
@@ -159,6 +163,7 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
     const double vara;
     const int maxp;
     const CriterionType ic_type;  // Pre-converted enum
+    const int min_p;              // Minimum AR order for CO residual model
     const std::vector<uint64_t>& seeds;
 
     // Precomputed AR generation parameters (constant, computed once)
@@ -173,14 +178,14 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 
     // Constructor - precomputes sd and burn for efficiency
     WBGBootstrapCOBAWorker(int n_, const arma::vec& phi_, double vara_, int maxp_,
-                           CriterionType ic_type_,
+                           CriterionType ic_type_, int min_p_,
                            const std::vector<uint64_t>& seeds_,
                            Rcpp::NumericVector tstats_,
                            Rcpp::NumericVector phi1_values_,
                            Rcpp::NumericMatrix phi_matrix_,
                            Rcpp::IntegerVector orders_)
         : n(n_), phi(phi_), vara(vara_), maxp(maxp_), ic_type(ic_type_),
-          seeds(seeds_),
+          min_p(min_p_), seeds(seeds_),
           sd(std::sqrt(vara_)),
           burn(phi_.n_elem == 0 ? 0 : calc_ar_burnin_cpp(phi_, n_)),
           tstats(tstats_), phi1_values(phi1_values_),
@@ -205,11 +210,13 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
             gen_ar_into_ws(ws.x_buf, phi, sd, burn, seeds[b], ws.burn_buf);
 
             // Compute CO t-statistic using workspace (ZERO allocations)
-            tstats[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws);
+            // Uses user's min_p for CO residual model selection
+            tstats[b] = co_tstat_ws(ws.x_buf, maxp, ic_type, ws, min_p);
 
-            // Fit AR model to bootstrap sample using workspace
-            // Note: This reuses ws.xc, ws.ef, ws.eb, ws.a_curr, ws.a_prev
-            BurgResult ar_fit = burg_aic_select_ws(ws.x_buf, maxp, ic_type, ws);
+            // Fit AR model to bootstrap sample for COBA median selection
+            // Uses min_p=0 here: bootstrap samples are generated under H0 (no trend),
+            // so we want the unrestricted AR fit for estimating phi(1) bias
+            BurgResult ar_fit = burg_aic_select_ws(ws.x_buf, maxp, ic_type, ws, 0);
 
             // Store results
             orders[b] = ar_fit.p;
@@ -239,6 +246,7 @@ struct WBGBootstrapCOBAWorker : public RcppParallel::Worker {
 //' @param maxp Integer, maximum AR order for CO test and AR fitting.
 //' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
 //' @param grain_size Integer, minimum iterations per thread (default 1).
+//' @param min_p Integer, minimum AR order for CO residual model (default 0).
 //' @return List with tstats, phi1_values, phi_matrix, orders.
 //' @keywords internal
 //' @noRd
@@ -250,7 +258,8 @@ Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(
     const std::vector<uint64_t>& seeds,
     int maxp = 5,
     std::string criterion = "aic",
-    std::size_t grain_size = 1
+    std::size_t grain_size = 1,
+    int min_p = 0
 ) {
     // Validate AR order constraints (C++ buffer limit is MAX_P=20)
     if (maxp > 20) {
@@ -272,7 +281,7 @@ Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(
     // Convert criterion string to enum ONCE
     CriterionType ic_type = criterion_from_string(criterion);
 
-    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, ic_type, seeds,
+    WBGBootstrapCOBAWorker worker(n, phi, vara, maxp, ic_type, min_p, seeds,
                                    tstats, phi1_values, phi_matrix, orders);
     RcppParallel::parallelFor(0, nb, worker, grain_size);
 

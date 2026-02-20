@@ -10,6 +10,7 @@ wbg_boot_fast(
   maxp = 5L,
   criterion = c("aic", "aicc", "bic"),
   bootadj = FALSE,
+  min_p = 1L,
   seed = NULL
 )
 }
@@ -27,6 +28,11 @@ wbg_boot_fast(
 Bootstrap Adjustment) variance adjustment for improved small-sample
 performance. Default is \code{FALSE} for maximum speed.}
 
+\item{min_p}{Integer. Minimum AR order for the CO residual model.
+Default \code{1L} matches the paper's Cochrane-Orcutt procedure (always
+AR(1)+). Set to \code{0L} to allow AR(0) selection when residuals appear
+uncorrelated.}
+
 \item{seed}{Integer, random seed for reproducibility. Default NULL.}
 }
 \value{
@@ -38,7 +44,12 @@ A list of class "wbg_boot_fast" containing:
 \item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs). Use for testing
 positive trend or for quantile-based two-sided test.}
 \item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs). Use for testing
-negative trend or for quantile-based two-sided test.}
+negative trend.}
+\item{pvalue_quantile}{Quantile-based two-sided p-value:
+\code{2 * min(pvalue_upper, pvalue_lower)}. This matches the rejection
+rule in Section 2.1 of the original WBG paper (Woodward et al. 1997).
+May differ from the abs-based \code{pvalue} when the bootstrap
+distribution is asymmetric.}
 \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 \item{boot_tstats}{Vector of bootstrap t-statistics.}
 \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.

@@ -160,15 +160,16 @@ BEGIN_RCPP
 END_RCPP
 }
 // co_tstat_pure_cpp
-double co_tstat_pure_cpp(const arma::vec& x, int maxp, std::string criterion);
-RcppExport SEXP _tstse_co_tstat_pure_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP) {
+double co_tstat_pure_cpp(const arma::vec& x, int maxp, std::string criterion, int min_p);
+RcppExport SEXP _tstse_co_tstat_pure_cpp(SEXP xSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP min_pSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< const arma::vec& >::type x(xSEXP);
     Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
-    rcpp_result_gen = Rcpp::wrap(co_tstat_pure_cpp(x, maxp, criterion));
+    Rcpp::traits::input_parameter< int >::type min_p(min_pSEXP);
+    rcpp_result_gen = Rcpp::wrap(co_tstat_pure_cpp(x, maxp, criterion, min_p));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -187,8 +188,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // wbg_bootstrap_kernel_grain_cpp
-Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size);
-RcppExport SEXP _tstse_wbg_bootstrap_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP) {
+Rcpp::NumericVector wbg_bootstrap_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size, int min_p);
+RcppExport SEXP _tstse_wbg_bootstrap_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP, SEXP min_pSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -199,13 +200,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size));
+    Rcpp::traits::input_parameter< int >::type min_p(min_pSEXP);
+    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size, min_p));
     return rcpp_result_gen;
 END_RCPP
 }
 // wbg_bootstrap_coba_kernel_grain_cpp
-Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size);
-RcppExport SEXP _tstse_wbg_bootstrap_coba_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP) {
+Rcpp::List wbg_bootstrap_coba_kernel_grain_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, std::size_t grain_size, int min_p);
+RcppExport SEXP _tstse_wbg_bootstrap_coba_kernel_grain_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP grain_sizeSEXP, SEXP min_pSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -216,7 +218,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type maxp(maxpSEXP);
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
     Rcpp::traits::input_parameter< std::size_t >::type grain_size(grain_sizeSEXP);
-    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_coba_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size));
+    Rcpp::traits::input_parameter< int >::type min_p(min_pSEXP);
+    rcpp_result_gen = Rcpp::wrap(wbg_bootstrap_coba_kernel_grain_cpp(n, phi, vara, seeds, maxp, criterion, grain_size, min_p));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -301,10 +304,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_ols_detrend_cpp", (DL_FUNC) &_tstse_ols_detrend_cpp, 1},
     {"_tstse_co_tas_boot_kernel_cpp", (DL_FUNC) &_tstse_co_tas_boot_kernel_cpp, 7},
     {"_tstse_co_tas_boot_tstat_kernel_cpp", (DL_FUNC) &_tstse_co_tas_boot_tstat_kernel_cpp, 7},
-    {"_tstse_co_tstat_pure_cpp", (DL_FUNC) &_tstse_co_tstat_pure_cpp, 3},
+    {"_tstse_co_tstat_pure_cpp", (DL_FUNC) &_tstse_co_tstat_pure_cpp, 4},
     {"_tstse_gen_ar_seeded_cpp", (DL_FUNC) &_tstse_gen_ar_seeded_cpp, 4},
-    {"_tstse_wbg_bootstrap_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_grain_cpp, 7},
-    {"_tstse_wbg_bootstrap_coba_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_grain_cpp, 7},
+    {"_tstse_wbg_bootstrap_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_grain_cpp, 8},
+    {"_tstse_wbg_bootstrap_coba_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_grain_cpp, 8},
     {"_tstse_convolve_truncated_cpp", (DL_FUNC) &_tstse_convolve_truncated_cpp, 3},
     {"_tstse_gegenb_cpp", (DL_FUNC) &_tstse_gegenb_cpp, 3},
     {"_tstse_gen_arch_cpp", (DL_FUNC) &_tstse_gen_arch_cpp, 5},

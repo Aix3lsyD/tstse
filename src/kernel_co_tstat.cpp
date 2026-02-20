@@ -202,7 +202,8 @@ static double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
 // Pure C++ CO t-statistic
 // Thread-safe: no Rcpp types used internally
 // Optimized: uses fused single-pass for steps 3-5 (zero allocations)
-double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion) {
+double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion,
+                     int min_p) {
     const int n = x.n_elem;
 
     // Clamp maxp first (same logic as Burg) to allow short series to proceed
@@ -222,7 +223,7 @@ double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion)
     arma::vec resid = ols_detrend_internal(x);
 
     // Step 2: Burg AR selection on residuals (pure C++ version)
-    BurgResult ar_fit = burg_aic_select_pure(resid, maxp, criterion);
+    BurgResult ar_fit = burg_aic_select_pure(resid, maxp, criterion, min_p);
 
     // Steps 3-5: Fused single-pass (ZERO allocations)
     // Computes AR transform, time transform, and OLS t-stat all on-the-fly
@@ -235,7 +236,7 @@ double co_tstat_pure(const arma::vec& x, int maxp, const std::string& criterion)
 // Uses pre-allocated workspace for all temporary vectors
 // =============================================================================
 double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
-                   CoBootstrapWorkspace& ws) {
+                   CoBootstrapWorkspace& ws, int min_p) {
     const int n = x.n_elem;
 
     // Clamp maxp first (same logic as Burg) to allow short series to proceed
@@ -255,7 +256,7 @@ double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
     ols_detrend_ws(x, ws);
 
     // Step 2: Burg AR selection using workspace (ZERO allocations except best_phi copy)
-    BurgResult ar_fit = burg_aic_select_ws(ws.resid, maxp, ic_type, ws);
+    BurgResult ar_fit = burg_aic_select_ws(ws.resid, maxp, ic_type, ws, min_p);
 
     // Steps 3-5: Fused single-pass (already ZERO allocations)
     return co_tstat_fused(x, ar_fit.phi);
@@ -276,11 +277,14 @@ double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
 //' @param x Numeric vector, the time series.
 //' @param maxp Integer, maximum AR order for model selection.
 //' @param criterion String, information criterion: "aic", "aicc", or "bic".
+//' @param min_p Integer, minimum AR order for residual model (0 allows AR(0),
+//'   1 matches paper's CO procedure). Default 0 for backward compatibility.
 //' @return Double, Cochrane-Orcutt t-statistic.
 //' @keywords internal
 //' @noRd
 // [[Rcpp::export]]
 double co_tstat_pure_cpp(const arma::vec& x, int maxp = 5,
-                          std::string criterion = "aic") {
-    return co_tstat_pure(x, maxp, criterion);
+                          std::string criterion = "aic",
+                          int min_p = 0) {
+    return co_tstat_pure(x, maxp, criterion, min_p);
 }

@@ -16,3 +16,7 @@ papers/
 src/Makevars
 src/Makevars.win
 simulations/
+
+.rshiny-docs/
+.claude/
+openspec/

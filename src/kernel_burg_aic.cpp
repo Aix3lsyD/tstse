@@ -69,8 +69,11 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
             } else {
                 ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
             }
-        } else { // bic
+        } else if (criterion == "bic") {
             ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
+        } else {
+            // Unknown criterion: default to AIC (matches criterion_from_string)
+            ic0 = n * std::log(vara0) + 2.0 * 1;
         }
         best_ic = ic0;
     }
@@ -145,8 +148,11 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
             } else {
                 ic = std::numeric_limits<double>::infinity();
             }
-        } else { // bic
+        } else if (criterion == "bic") {
             ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
+        } else {
+            // Unknown criterion: default to AIC (matches criterion_from_string)
+            ic = n * std::log(var_recursive) + 2.0 * k;
         }
 
         // Update best model if this is better AND p >= min_p
@@ -156,6 +162,14 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
             best_phi = a_curr;
             best_vara = var_recursive;
         }
+    }
+
+    // Enforce min_p constraint: if no model with p >= min_p was selected,
+    // fall back to AR(min_p) with zero coefficients
+    if (min_p > 0 && best_p < min_p) {
+        best_p = min_p;
+        best_phi = arma::zeros(min_p);
+        best_vara = vara0;
     }
 
     return BurgResult(best_phi, best_vara, best_p, best_ic);
@@ -359,6 +373,16 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
             }
             best_vara = var_recursive;
         }
+    }
+
+    // Enforce min_p constraint: if no model with p >= min_p was selected,
+    // fall back to AR(min_p) with zero coefficients
+    if (min_p > 0 && ws.best_p < min_p) {
+        ws.best_p = min_p;
+        for (int j = 0; j < min_p; ++j) {
+            ws.best_phi[j] = 0.0;
+        }
+        best_vara = vara0;
     }
 
     // Single allocation at return (unavoidable - need to return result)

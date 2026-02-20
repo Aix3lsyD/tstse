@@ -39,6 +39,7 @@ Suggests:
     sandwich,
     signal,
     sn,
+    tidyr,
     tswge,
     waveslim,
     zoo

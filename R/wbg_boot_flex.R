@@ -230,6 +230,9 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
   pvalue_upper <- (sum(boot_stats >= obs_stat) + 1) / (nb + 1)
   pvalue_lower <- (sum(boot_stats <= obs_stat) + 1) / (nb + 1)
 
+  # Quantile-based two-sided p-value (paper-faithful, Section 2.1)
+  pvalue_quantile <- 2 * min(pvalue_upper, pvalue_lower)
+
   # Asymptotic p-value (two-sided, standard normal)
   pvalue_asymp <- 2 * pnorm(-abs(obs_stat))
 
@@ -239,6 +242,7 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
     pvalue = pvalue_two,
     pvalue_upper = pvalue_upper,
     pvalue_lower = pvalue_lower,
+    pvalue_quantile = pvalue_quantile,
     pvalue_asymp = pvalue_asymp,
     ar_order = ar_p,
     ar_phi = ar_phi,
@@ -274,7 +278,14 @@ wbg_boot_flex <- function(x, stat_fn, nb = 399L, p_max = 5L,
     }
 
     # Compute adjustment factor and adjusted statistic
-    adj_factor <- sd(boot_stats_adj) / sd(boot_stats)
+    sd_boot <- sd(boot_stats)
+    if (sd_boot < .Machine$double.eps) {
+      adj_factor <- 1.0
+      warning("Zero-variance bootstrap distribution; COBA adjustment set to 1.0",
+              call. = FALSE)
+    } else {
+      adj_factor <- sd(boot_stats_adj) / sd_boot
+    }
     obs_stat_adj <- adj_factor * obs_stat
 
     # Adjusted p-value

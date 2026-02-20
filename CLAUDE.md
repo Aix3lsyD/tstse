@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+<!-- RSHINY-AGENTS-MD-START -->[R Shiny Docs Index]|root: ./.rshiny-docs|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for any R Shiny tasks.|root-files:{ExtendedTask.Rd,MockShinySession.Rd,NS.Rd,Progress.Rd,absolutePanel.Rd,actionButton.Rd,app-state.R,app_template.R,applyInputHandlers.Rd,bind-cache.R,bind-event.R,bindCache.Rd,bindEvent.Rd,bookmark-state-local.R,bookmark-state.R,bookmarkButton.Rd,bootstrap-deprecated.R,bootstrap-layout.R,bootstrap.R,bootstrapLib.Rd,bootstrapPage.Rd,brushOpts.Rd,brushedPoints.Rd,busy-indicators-spinners.R,busy-indicators.R,busyIndicatorOptions.Rd,cache-utils.R,callModule.Rd,checkboxGroupInput.Rd,checkboxInput.Rd,clickOpts.Rd,column.Rd,conditionalPanel.Rd,conditions.R,createRenderFunction.Rd,createWebDependency.Rd,dateInput.Rd,dateRangeInput.Rd,debounce.Rd,deprecated.R,devmode.R,devmode.Rd,diagnose.R,diskCache.Rd,domains.Rd,downloadButton.Rd,downloadHandler.Rd,enableBookmarking.Rd,exportTestValues.Rd,exprToFunction.Rd,extended-task.R,fileInput.Rd,fileupload.R,fillPage.Rd,fillRow.Rd,fixedPage.Rd,flowLayout.Rd,fluidPage.Rd,freezeReactiveValue.Rd,getCurrentOutputInfo.Rd,getCurrentTheme.Rd,getQueryString.Rd,globals.R,graph.R,headerPanel.Rd,helpText.Rd,history.R,hooks.R,html-deps.R,htmlOutput.Rd,httpResponse.Rd,icon.Rd,image-interact-opts.R,image-interact.R,imageutils.R,input-action.R,input-checkbox.R,input-checkboxgroup.R,input-date.R,input-daterange.R,input-file.R,input-numeric.R,input-password.R,input-radiobuttons.R,input-select.R,input-slider.R,input-submit.R,input-text.R,input-textarea.R,input-utils.R,inputPanel.Rd,insert-tab.R,insert-ui.R,insertTab.Rd,insertUI.Rd,invalidateLater.Rd,is.reactivevalues.Rd,isRunning.Rd,isTruthy.Rd,isolate.Rd,jqueryui.R,knitr.R,knitr_methods.Rd,loadSupport.Rd,makeReactiveBinding.Rd,map.R,markOutputAttrs.Rd,markRenderFunction.Rd,markdown.Rd,maskReactiveContext.Rd,memoryCache.Rd,middleware-shiny.R,middleware.R,mock-session.R,modal.R,modalDialog.Rd,moduleServer.Rd,modules.R,navbarPage.Rd,navlistPanel.Rd,notifications.R,numericInput.Rd,observe.Rd,observeEvent.Rd,onBookmark.Rd,onFlush.Rd,onStop.Rd,otel-attr-srcref.R,otel-collect.R,otel-enable.R,otel-error.R,otel-label.R,otel-reactive-update.R,otel-session.R,otel-shiny.R,otel-with.R,outputOptions.Rd,pageWithSidebar.Rd,parseQueryString.Rd,passwordInput.Rd,plotOutput.Rd,plotPNG.Rd,priorityqueue.R,progress.R,radioButtons.Rd,react.R,reactive-domains.R,reactive.Rd,reactiveConsole.Rd,reactiveFileReader.Rd,reactivePoll.Rd,reactiveTimer.Rd,reactiveVal.Rd,reactiveValues.Rd,reactiveValuesToList.Rd,reactives.R,reactlog.Rd,reexports.R,reexports.Rd,registerInputHandler.Rd,registerThemeDependency.Rd,removeInputHandler.Rd,render-cached-plot.R,render-plot.R,render-table.R,renderCachedPlot.Rd,renderDataTable.Rd,renderImage.Rd,renderPlot.Rd,renderPrint.Rd,renderTable.Rd,renderUI.Rd,repeatable.Rd,req.Rd,resourcePaths.Rd,restoreInput.Rd,run-url.R,runApp.Rd,runExample.Rd,runGadget.Rd,runTests.Rd,runUrl.Rd,runapp.R,safeError.Rd,selectInput.Rd,serializers.R,server-input-handlers.R,server-resource-paths.R,server.R,serverInfo.Rd,session.Rd,setBookmarkExclude.Rd,setSerializer.Rd,shiny-options.R,shiny-package.R,shiny-package.Rd,shiny.R,shiny.appobj.Rd,shinyApp.Rd,shinyAppTemplate.Rd,shinyDeprecated.Rd,shinyOptions.Rd,shinyServer.Rd,shinyUI.Rd,shinyapp.R,shinyui.R,shinywrappers.R,showBookmarkUrlModal.Rd,showModal.Rd,showNotification.Rd,showTab.Rd,showcase.R,sidebarLayout.Rd,sizeGrowthRatio.Rd,sliderInput.Rd,snapshot.R,snapshotExclude.Rd,snapshotPreprocessInput.Rd,snapshotPreprocessOutput.Rd,splitLayout.Rd,stacktrace.Rd,staticimports.R,stopApp.Rd,submitButton.Rd,tabPanel.Rd,tabsetPanel.Rd,tar.R,test-export.R,test-server.R,test.R,testServer.Rd,textAreaInput.Rd,textInput.Rd,textOutput.Rd,timer.R,titlePanel.Rd,update-input.R,updateActionButton.Rd,updateCheckboxGroupInput.Rd,updateCheckboxInput.Rd,updateDateInput.Rd,updateDateRangeInput.Rd,updateNumericInput.Rd,updateQueryString.Rd,updateRadioButtons.Rd,updateSelectInput.Rd,updateSliderInput.Rd,updateTabsetPanel.Rd,updateTextAreaInput.Rd,updateTextInput.Rd,urlModal.Rd,useBusyIndicators.Rd,utils-lang.R,utils-tags.R,utils.R,validate.Rd,varSelectInput.Rd,version_bs_date_picker.R,version_ion_range_slider.R,version_jquery.R,version_jqueryui.R,version_selectize.R,version_strftime.R,verticalLayout.Rd,viewer.R,viewer.Rd,wellPanel.Rd,withMathJax.Rd,withOtelCollect.Rd,withProgress.Rd}|01_hello:{app.R}|02_text:{app.R}|03_reactivity:{app.R}|04_mpg:{app.R}|05_sliders:{app.R}|06_tabsets:{app.R}|07_widgets:{app.R}|09_upload:{app.R}|10_download:{app.R}|11_timer:{app.R}<!-- RSHINY-AGENTS-MD-END -->
+
 ## Package Overview
 
 **tstse** is an R package for time series statistical estimation focused on ARMA/ARIMA/GARCH modeling. It provides simulation, estimation, model selection, and diagnostic tools with C++ acceleration via Rcpp.
@@ -73,158 +75,72 @@ Output classes with custom print/plot methods:
 
 MA coefficients use **negated sign** from R's `arima()` to match textbook (ATSA) conventions. This is intentional and documented in `est_arma()`.
 
-## Key Function Groups
+## DuckDB Monte Carlo Storage
 
-### Core (Phase 1 - Complete)
-- **Generation**: `gen_arch()`, `gen_arima()`, `gen_arma()`, `gen_aruma()`, `gen_garch()`, `gen_geg()`, `gen_sigplusnoise()`
-- **Estimation**: `est_ar()` (MLE/Burg/Yule-Walker), `est_arma()` (MLE), `slr()` (signal+noise)
-- **Forecasting**: `fore_aruma()`, `fore_arima()`, `fore_arma()`, `fore_farma()`, `fore_sigplusnoise()`
-- **Model Selection**: `aic()`, `aic_ar()`, `aic5()`, `aic_burg()`
-- **Diagnostics**: `ljung_box()`, `backcast()`
-- **Trend Testing**: `co()` (Cochrane-Orcutt), `wbg_boot()` (WBG bootstrap)
+Bootstrap simulation results are stored in DuckDB for efficient columnar storage and querying. The schema is defined in `R/duckdb_utils.R` and initialized idempotently via `mc_db_init()`.
 
-### Extended (Phase 2 - In Progress)
-See `R_extended/` for prototypes.
+### Schema
+
+**2 tables** with a flat design optimized for a single capstone study. A `batch` groups simulation iterations from one execution run; the same config can be run multiple times across batches and results pooled or compared.
+
+```
+batches
+├── batch_id    INTEGER PK (auto-increment)
+├── label       VARCHAR
+└── created_at  TIMESTAMP DEFAULT now
+
+simulations
+├── sim_id          INTEGER PK (auto-increment)
+├── batch_id        INTEGER FK → batches
+├── iteration       INTEGER NOT NULL
+├── n               INTEGER NOT NULL        -- observation length
+├── phi             DOUBLE NOT NULL         -- AR(1) coefficient
+├── innov_dist      VARCHAR NOT NULL        -- 'norm','t(3)','arch(0.2)'
+├── obs_stat        DOUBLE NOT NULL         -- CO t-statistic
+├── boot_dist       DOUBLE[]                -- full bootstrap distribution
+├── pvalue          DOUBLE                  -- two-sided (abs-based)
+├── pvalue_upper    DOUBLE                  -- upper-tail
+├── pvalue_lower    DOUBLE                  -- lower-tail
+├── pvalue_asymp    DOUBLE                  -- asymptotic
+├── pvalue_adj      DOUBLE                  -- COBA adjusted
+├── null_ar_order   INTEGER                 -- selected AR order
+├── null_ar_phi     DOUBLE[]                -- fitted AR coefficients
+├── null_vara       DOUBLE                  -- innovation variance
+└── created_at      TIMESTAMP DEFAULT now
+```
+
+**Indexes**: `idx_sim_config` on (n, phi, innov_dist), `idx_sim_batch` on (batch_id).
+
+### Views
+
+- **`v_rejection_rates`** - Pooled rejection rates across all batches. Groups by (n, phi, innov_dist). Computes `reject_05` (bootstrap), `reject_asymp_05` (asymptotic), `reject_adj_05` (COBA) with binomial standard errors.
+- **`v_rejection_rates_by_batch`** - Per-batch rejection rates for comparing individual runs. Same columns plus batch label and timestamp.
+
+### Key Functions (`R/duckdb_utils.R`)
+
+| Function | Purpose |
+|----------|---------|
+| `mc_db_connect(path, read_only)` | Open DuckDB connection |
+| `mc_db_init(con)` | Create schema (idempotent) |
+| `mc_db_write_batch(con, results, batch_id, n, phi, innov_dist)` | Batch write `wbg_boot_fast` results in a transaction |
+| `mc_db_query(con, n, phi, innov_dist, batch_id, limit)` | Query simulations with optional filters |
+| `mc_db_rejection_rates(con, by_batch, n, phi, innov_dist)` | Get pooled or per-batch rejection rates |
+| `mc_db_recalc_pvalue(con, sim_id)` | Recompute p-values from stored boot_dist |
+| `mc_study(path, label)` | High-level closure: `$save_batch()`, `$query()`, `$rejection_rates()`, `$end()` |
+
+### Shiny Viewer
+
+`boot_db_viewer(db_path)` launches an interactive Shiny app (`inst/shiny/boot_viewer/app.R`) for exploring results. Features: cascading filters (n, phi, innov_dist), pooled vs per-batch toggle, color-coded rejection rate tables, power curve plots, heatmaps, bootstrap distribution histograms, CSV/PNG export. DB path can also be set via `options(tstse.viewer_db = "path")`.
+
+### Design Patterns
+
+- **Auto-increment integers**: batch_id and sim_id use DuckDB sequences (no UUIDs)
+- **Transactional batch writes**: All inserts wrapped in DBI transactions with rollback on failure
+- **innov_dist as self-describing string**: `"norm"`, `"t(3)"`, `"arch(0.2)"` -- no separate params column
+- **Direct field mapping**: `wbg_boot_fast` fields mapped 1:1 (tco_obs → obs_stat, boot_tstats → boot_dist, phi → null_ar_phi)
 
 ## Phase 2: Extended Features
 
-### Priority 1: Flexible ARUMA Generator
-
-**Goal**: ARUMA generation with non-normal/non-iid innovations (t-distributed, skew-t, GARCH, mixture).
-
-**Prototype**: `gen_aruma_tse.R`, `generators_tse.R`
-
-**Design Pattern** - Factory functions for innovation generators:
-```r
-# Factory creates a generator function
-make_gen_t <- function(df, scale = FALSE) {
-  force(df); force(scale)
-  function(n) {
-    x <- rt(n, df = df)
-    if (scale && df > 2) x <- x * sqrt((df - 2) / df)
-    x
-  }
-}
-
-# Usage
-t_gen <- make_gen_t(df = 5, scale = TRUE)
-result <- gen_aruma(n = 500, phi = 0.7, innov_gen = t_gen)
-```
-
-**Innovation generators to implement**:
-| Generator | File | Status | Notes |
-|-----------|------|--------|-------|
-| `make_gen_norm()` | generators.R | Prototype | Standard normal, configurable sd |
-| `make_gen_t()` | generators.R | Prototype | Student's t, optional scaling |
-| `make_gen_skt()` | generators.R | Prototype | Skew-t via `sn` package |
-| `make_gen_unif()` | generators.R | Prototype | Uniform, unit variance by default |
-| `make_gen_mixnorm()` | generators.R | Prototype | Mixture of normals (outliers) |
-| `make_gen_garch()` | generators.R | Prototype | GARCH process via `rugarch` |
-
-**Key implementation notes**:
-- Precompute theoretical moments at factory time (not per-call)
-- Use `force()` to capture closure variables
-- Single call to `innov_gen(total_n)` preserves dependence (critical for GARCH)
-- Handle burn-in properly: `n_start` for ARMA stabilization, `spin` for nonstationary operators
-
-### Priority 2: Generalized WBG Bootstrap
-
-**Goal**: Bootstrap framework that accepts any test statistic function, not just Cochrane-Orcutt.
-
-**Prototype**: `wbg_boot_test_tse.R`, `stat_generators_tse.R`
-
-**Design Pattern** - Statistic factory functions:
-```r
-# Factory creates a statistic function
-make_stat_co <- function(maxp = 5, ar_method = "mle") {
-  function(x) {
-    co(x, maxp = maxp, ar_method = ar_method)$tco
-  }
-}
-
-# Usage
-stat_fn <- make_stat_co(maxp = 5)
-result <- wbg_boot_test(x, stat_fn = stat_fn, nb = 399, parallel = TRUE)
-```
-
-**Statistic generators to implement**:
-| Generator | Purpose | Dependencies |
-|-----------|---------|--------------|
-| `make_stat_co()` | Cochrane-Orcutt t-stat | Internal |
-| `make_stat_ols_t()` | OLS trend t-stat | None |
-| `make_stat_ols_slope()` | OLS slope estimate | None |
-| `make_stat_mk()` | Mann-Kendall S | `Kendall` |
-| `make_stat_spearman()` | Spearman correlation | None |
-| `make_stat_sen()` | Sen's slope | None |
-| `make_stat_hac()` | Newey-West t-stat | `sandwich`, `lmtest` |
-| `make_stat_bn()` | Bloomfield-Nychka t-stat | None |
-| `make_stat_lr()` | Likelihood ratio | None |
-| `make_stat_gls()` | GLS t-stat | `nlme` |
-
-**Performance requirements**:
-- Use `gen_ar_fast()` (not `gen_arma()`) for AR bootstrap - 30-50x speedup
-- Support parallel execution via `mclapply`/`parLapply`
-- Reproducible via explicit `boot_seeds` vector
-
-### Priority 3: Fast AR Generator
-
-**Goal**: Optimized AR generation for bootstrap (adaptive burn-in, C-implemented filter).
-
-**Prototype**: `gen_ar_fast_tse.R`
-
-**Key optimizations**:
-```r
-gen_ar_fast <- function(n, phi, vara = 1, seed = NULL) {
-  # Adaptive burn-in based on persistence
-  persistence <- sum(abs(phi))
-  burn <- if (persistence >= 0.999) {
-    max(50, round(n * 0.5), 500)
-  } else if (persistence < 0.01) {
-    50
-  } else {
-    max(50, round(3 * abs(log(0.001) / log(persistence))))
-  }
-  burn <- min(burn, 2000)
-  
-  # Use stats::filter (C implementation)
-  a <- rnorm(n + burn, sd = sqrt(vara))
-  x <- stats::filter(a, filter = phi, method = "recursive")
-  as.numeric(x[(burn + 1):(n + burn)])
-}
-```
-
-**Rcpp candidate**: If R version is bottleneck, implement in C++.
-
-### Priority 4: GARCH Comparison Tools
-
-**Goal**: Systematic GARCH model comparison with diagnostics and display.
-
-**Prototype**: `compare_garch_tse.R`, `display_garch_tse.R`
-
-**Components**:
-- `compare_garch()` - Fit grid of ARCH/GARCH models, compute IC and diagnostics
-- `table_garch_gt()` - Publication-ready gt table with color coding
-- `table_garch_cli()` - Terminal display via cli package
-- `table_coef_gt()` - Coefficient table for single model
-
-**Diagnostics computed**:
-- Information criteria: AIC, AICc, BIC
-- Weighted Ljung-Box on squared standardized residuals
-- Nyblom stability test
-- Sign bias test
-- Coefficient significance counts
-
-### Priority 5: MLE AR with Stationarity Check
-
-**Goal**: MLE estimation with fallback through top-N candidates if non-stationary.
-
-**Prototype**: `ar_mle_tse.R`
-
-**Key features**:
-- `check_stationary()` - Verify roots outside unit circle
-- `aic_ar_mle()` - MLE with IC selection
-- Fallback: check top `n_best` models for stationarity
-- Option to disable stationarity enforcement for simulation studies
 
 ## Code Style & Conventions
 
@@ -302,6 +218,8 @@ R/
 ├── fore_*.R               # Forecasting functions
 ├── gen_*.R                # Generation functions
 ├── aic*.R                 # Model selection
+├── duckdb_utils.R         # DuckDB schema, connection, read/write utilities
+├── boot_db_viewer.R       # Shiny viewer launcher
 ├── generators.R           # Innovation factory functions (Phase 2)
 ├── stat_generators.R      # Statistic factory functions (Phase 2)
 ├── wbg_boot_test.R        # Generalized bootstrap (Phase 2)
@@ -316,6 +234,9 @@ src/
 ├── gen_ar_fast.cpp        # (Phase 2 candidate)
 └── ...
 
+inst/shiny/boot_viewer/
+└── app.R                  # DuckDB results viewer Shiny app
+
 R_extended/                # Prototypes (not installed)
 ├── generators_tse.R
 ├── stat_generators_tse.R
@@ -327,19 +248,7 @@ R_extended/                # Prototypes (not installed)
 └── display_garch_tse.R
 
 tests/testthat/
-└── test-*.R
+├── test-*.R
+└── test-duckdb_utils.R    # DuckDB schema and utility tests
 ```
 
-## Migration Notes
-
-### From tswge
-Phase 1 rewrote all tswge functions. Key mappings documented in git history.
-
-### From Prototypes to Production
-When moving from `R_extended/` to `R/`:
-1. Remove `.tse` suffix from function names
-2. Update internal function calls to use package functions
-3. Add roxygen2 documentation
-4. Add testthat tests
-5. Update NAMESPACE via `devtools::document()`
-6. Check `R/` for existing functions we can improve on.  We might not need to make a whole new one. 

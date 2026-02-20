@@ -175,6 +175,9 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
   pvalue_upper <- (sum(boot_tstats >= tco_obs) + 1) / (nb + 1)
   pvalue_lower <- (sum(boot_tstats <= tco_obs) + 1) / (nb + 1)
 
+  # Quantile-based two-sided p-value (paper-faithful, Section 2.1)
+  pvalue_quantile <- 2 * min(pvalue_upper, pvalue_lower)
+
   # Asymptotic p-value (two-sided, standard normal)
   pvalue_asymp <- 2 * pnorm(-abs(tco_obs))
 
@@ -185,6 +188,7 @@ wbg_boot <- function(x, nb = 399L, maxp = 5L,
     pvalue       = pvalue,
     pvalue_upper = pvalue_upper,
     pvalue_lower = pvalue_lower,
+    pvalue_quantile = pvalue_quantile,
     pvalue_asymp = pvalue_asymp,
     tco_obs      = tco_obs,
     boot_tstats  = boot_tstats,

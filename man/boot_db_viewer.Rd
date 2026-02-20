@@ -4,62 +4,36 @@
 \alias{boot_db_viewer}
 \title{Launch Bootstrap Simulation Viewer}
 \usage{
-boot_db_viewer(
-  db_path = NULL,
-  launch.browser = TRUE,
-  port = NULL,
-  host = "127.0.0.1"
-)
+boot_db_viewer(db_path = NULL)
 }
 \arguments{
-\item{db_path}{Character. Path to the DuckDB database file. If NULL,
-opens the app without a database loaded (user can browse but won't see data).}
-
-\item{launch.browser}{Logical. If TRUE (default), opens the app in a browser.
-If FALSE, returns the app URL for manual navigation.}
-
-\item{port}{Integer. Port number for the Shiny app. Default is random.}
-
-\item{host}{Character. Host address. Default is "127.0.0.1" (localhost only).}
+\item{db_path}{Path to a DuckDB database file. If omitted, falls back to
+\code{getOption("tstse.viewer_db")}.}
 }
 \value{
-Invisibly returns NULL. The function launches a Shiny app and
-blocks until the app is closed.
+Launches the Shiny app (does not return until the app is closed).
 }
 \description{
-Opens an interactive Shiny application for exploring bootstrap simulation
-results stored in a DuckDB database.
+Opens an interactive Shiny application for exploring DuckDB-stored
+Monte Carlo bootstrap simulation results. Provides rejection rate tables
+with color coding and flexible ggplot2 visualizations.
 }
 \details{
-The viewer provides:
-\itemize{
-\item Study/DGP/Method/Trial navigation and filtering
-\item Rejection rate summaries with standard errors
-\item Individual run inspection with bootstrap distribution plots
-\item Custom SQL query interface
-\item CSV export of results
-}
+The viewer is read-only and does not modify the database. It queries the
+\code{v_rejection_rates} and \code{v_rejection_rates_by_batch} views from the flat
+two-table schema (batches + simulations). Supports pooled and per-batch
+rejection rates, power curve plots, heatmaps, and bootstrap distribution
+histograms.
 
-Requires the \code{shiny}, \code{DT}, \code{duckdb}, and \code{DBI} packages to be installed.
+Required packages (all in Suggests): shiny, DT, ggplot2, duckdb, DBI.
 }
 \examples{
 \dontrun{
-# View results from a simulation study
-boot_db_viewer("my_simulations.duckdb")
+boot_db_viewer("path/to/study.duckdb")
 
-# Or after running simulations:
-study <- boot_study("results.duckdb", "My Study",
-                    dgp = list(n = 100, ar_phi = 0.7),
-                    method = list(name = "wbg_boot", nb = 399))
-# ... run simulations ...
-study$complete()
-study$end()
-
-# Now view the results
-boot_db_viewer("results.duckdb")
+# Or set the option globally
+options(tstse.viewer_db = "path/to/study.duckdb")
+boot_db_viewer()
 }
 
-}
-\seealso{
-\code{\link[=boot_study]{boot_study()}}, \code{\link[=boot_db_connect]{boot_db_connect()}}, \code{\link[=boot_db_query]{boot_db_query()}}
 }

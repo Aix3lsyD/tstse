@@ -16,3 +16,4 @@
 ^papers$
 ^src/Makevars$
 ^src/Makevars\.win$
+^openspec

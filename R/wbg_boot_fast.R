@@ -12,6 +12,10 @@
 #' @param bootadj Logical. If `TRUE`, performs the COBA (Cochrane-Orcutt
 #'   Bootstrap Adjustment) variance adjustment for improved small-sample
 #'   performance. Default is `FALSE` for maximum speed.
+#' @param min_p Integer. Minimum AR order for the CO residual model.
+#'   Default `1L` matches the paper's Cochrane-Orcutt procedure (always
+#'   AR(1)+). Set to `0L` to allow AR(0) selection when residuals appear
+#'   uncorrelated.
 #' @param seed Integer, random seed for reproducibility. Default NULL.
 #'
 #' @return A list of class "wbg_boot_fast" containing:
@@ -22,7 +26,12 @@
 #'   \item{pvalue_upper}{Upper-tail p-value: P(T* >= T_obs). Use for testing
 #'     positive trend or for quantile-based two-sided test.}
 #'   \item{pvalue_lower}{Lower-tail p-value: P(T* <= T_obs). Use for testing
-#'     negative trend or for quantile-based two-sided test.}
+#'     negative trend.}
+#'   \item{pvalue_quantile}{Quantile-based two-sided p-value:
+#'     \code{2 * min(pvalue_upper, pvalue_lower)}. This matches the rejection
+#'     rule in Section 2.1 of the original WBG paper (Woodward et al. 1997).
+#'     May differ from the abs-based \code{pvalue} when the bootstrap
+#'     distribution is asymmetric.}
 #'   \item{tco_obs}{Observed t-statistic from Cochrane-Orcutt fit.}
 #'   \item{boot_tstats}{Vector of bootstrap t-statistics.}
 #'   \item{boot_seeds}{Vector of RNG seeds used for each bootstrap replicate.
@@ -148,10 +157,12 @@
 #' )
 #' }
 #'
+#' @importFrom stats pnorm
 #' @export
 wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
                           criterion = c("aic", "aicc", "bic"),
                           bootadj = FALSE,
+                          min_p = 1L,
                           seed = NULL) {
 
   criterion <- match.arg(criterion)
@@ -171,6 +182,9 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   }
   if (maxp > 20L) {
     stop("`maxp` must be <= 20 (C++ buffer limit)", call. = FALSE)
+  }
+  if (!is.numeric(min_p) || length(min_p) != 1 || !(min_p %in% c(0L, 1L))) {
+    stop("`min_p` must be 0 or 1", call. = FALSE)
   }
 
   x <- as.numeric(x)
@@ -197,11 +211,11 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   # Step 1: Compute observed CO t-statistic using kernel implementation
 
   # Uses same algorithm as bootstrap kernel for bootstrap validity
-  tco_obs <- co_tstat_pure_cpp(x, maxp, criterion)
+  tco_obs <- co_tstat_pure_cpp(x, maxp, criterion, as.integer(min_p))
 
   # Step 2: Fit null model (no trend) using C++ Burg with user's criterion
   # Using burg_aic_select_cpp ensures the same IC is used throughout
-  fit <- burg_aic_select_cpp(x, maxp, criterion)
+  fit <- burg_aic_select_cpp(x, maxp, criterion, as.integer(min_p))
   p_null <- fit$p
   phi_null <- as.numeric(fit$phi)
   vara_null <- fit$vara
@@ -227,7 +241,8 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
       seeds = boot_seeds,
       maxp = maxp,
       criterion = criterion,
-      grain_size = grain_size
+      grain_size = grain_size,
+      min_p = as.integer(min_p)
     )
     boot_tstats <- boot_result$tstats
     phi1_values <- boot_result$phi1_values
@@ -251,11 +266,19 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
       seeds = boot_seeds_adj,
       maxp = maxp,
       criterion = criterion,
-      grain_size = grain_size
+      grain_size = grain_size,
+      min_p = as.integer(min_p)
     )
 
     # Compute adjustment factor (C = sigma_t_tilde* / sigma_t* from paper)
-    adj_factor <- sd(boot_tstats_adj) / sd(boot_tstats)
+    sd_boot <- sd(boot_tstats)
+    if (sd_boot < .Machine$double.eps) {
+      adj_factor <- 1.0
+      warning("Zero-variance bootstrap distribution; COBA adjustment set to 1.0",
+              call. = FALSE)
+    } else {
+      adj_factor <- sd(boot_tstats_adj) / sd_boot
+    }
     tco_obs_adj <- adj_factor * tco_obs
     pvalue_adj <- (sum(abs(boot_tstats) >= abs(tco_obs_adj)) + 1) / (nb + 1)
 
@@ -268,7 +291,8 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
       seeds = boot_seeds,
       maxp = maxp,
       criterion = criterion,
-      grain_size = grain_size
+      grain_size = grain_size,
+      min_p = as.integer(min_p)
     )
   }
 
@@ -282,6 +306,9 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
   pvalue_upper <- (sum(boot_tstats >= tco_obs) + 1) / (nb + 1)  # P(T* >= T_obs)
   pvalue_lower <- (sum(boot_tstats <= tco_obs) + 1) / (nb + 1)  # P(T* <= T_obs)
 
+  # Quantile-based two-sided p-value (paper-faithful, Section 2.1)
+  pvalue_quantile <- 2 * min(pvalue_upper, pvalue_lower)
+
   # Asymptotic p-value (two-sided, standard normal)
   pvalue_asymp <- 2 * pnorm(-abs(tco_obs))
 
@@ -293,6 +320,7 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     pvalue      = pvalue,
     pvalue_upper = pvalue_upper,
     pvalue_lower = pvalue_lower,
+    pvalue_quantile = pvalue_quantile,
     pvalue_asymp = pvalue_asymp,
     tco_obs     = tco_obs,
     boot_tstats = boot_tstats,
@@ -300,7 +328,8 @@ wbg_boot_fast <- function(x, nb = 399L, maxp = 5L,
     n           = n,
     nb          = nb,
     maxp        = maxp,
-    criterion   = criterion
+    criterion   = criterion,
+    min_p       = min_p
   )
 
   # Add COBA results if computed

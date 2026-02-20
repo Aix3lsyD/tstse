@@ -1,71 +1,59 @@
-# Bootstrap Simulation Viewer
-# Shiny app for exploring DuckDB-stored simulation results
+# Monte Carlo Simulation Viewer
+# Interactive Shiny app for exploring DuckDB-stored bootstrap rejection rates
 
 library(shiny)
 library(DT)
 library(duckdb)
 library(DBI)
+library(ggplot2)
 
 # =============================================================================
 # UI
 # =============================================================================
 
 ui <- fluidPage(
-
   tags$head(
     tags$style(HTML("
       .sidebar { background-color: #f8f9fa; padding: 15px; border-radius: 5px; }
-      .info-box { background-color: #e9ecef; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-      .stat-label { font-weight: bold; color: #495057; }
       .nav-tabs { margin-bottom: 20px; }
       .dataTables_wrapper { font-size: 0.9em; }
-      h4 { color: #343a40; margin-top: 0; }
+      .plot-controls { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
     "))
   ),
 
-  titlePanel("Bootstrap Simulation Viewer"),
+  titlePanel("Monte Carlo Simulation Viewer"),
 
   sidebarLayout(
     sidebarPanel(
       width = 3,
       class = "sidebar",
 
-      # Database connection
-      div(class = "info-box",
-        h4("Database"),
-        textOutput("db_path_display"),
-        actionButton("refresh_db", "Refresh", icon = icon("sync"),
-                     class = "btn-sm btn-outline-secondary")
-      ),
+      h4("Filters"),
+
+      selectizeInput("n_filter", "Sample Size (n)",
+                     choices = NULL, multiple = TRUE,
+                     options = list(placeholder = "All...")),
+
+      selectizeInput("phi_filter", "Phi Value",
+                     choices = NULL, multiple = TRUE,
+                     options = list(placeholder = "All...")),
+
+      selectizeInput("innov_filter", "Innovation Distribution",
+                     choices = NULL, multiple = TRUE,
+                     options = list(placeholder = "All...")),
 
       hr(),
 
-      # Filters
-      selectizeInput("study_select", "Study (multi-select)", choices = NULL,
-                     multiple = TRUE, options = list(placeholder = "All studies...")),
-      selectInput("error_type_select", "Error Type",
-                  choices = c("All" = "", "iid" = "iid", "GARCH" = "garch",
-                              "Heteroscedastic" = "hetero", "Student-t" = "t_dist")),
-      selectInput("dgp_select", "DGP Configuration", choices = NULL),
-      selectInput("method_select", "Method", choices = NULL),
-      selectInput("trial_select", "Trial", choices = NULL),
+      checkboxInput("compare_batches", "Compare Batches", value = FALSE),
 
       br(),
       actionButton("clear_filters", "Clear All Filters",
                    icon = icon("times-circle"), class = "btn-sm btn-outline-secondary"),
 
       hr(),
-
-      # Summary stats
-      div(class = "info-box",
-        h4("Selection Summary"),
-        uiOutput("selection_summary")
-      ),
-
-      hr(),
-
-      # Export
-      downloadButton("export_csv", "Export Results (CSV)", class = "btn-sm")
+      div(style = "font-size: 0.85em; color: #6c757d;",
+        textOutput("status_text")
+      )
     ),
 
     mainPanel(
@@ -73,132 +61,447 @@ ui <- fluidPage(
       tabsetPanel(
         id = "main_tabs",
 
-        # Tab 1: Overview / Rejection Rates
+        # =====================================================================
+        # Tab 1: Study Overview
+        # =====================================================================
+        tabPanel(
+          "Study Overview",
+          br(),
+          h4("Study Overview"),
+          fluidRow(
+            column(3,
+              wellPanel(style = "text-align: center;",
+                h6(style = "color: #6c757d; margin-bottom: 5px;", "Total Simulations"),
+                h3(style = "margin: 0;", textOutput("overview_total_sims", inline = TRUE))
+              )
+            ),
+            column(3,
+              wellPanel(style = "text-align: center;",
+                h6(style = "color: #6c757d; margin-bottom: 5px;", "Configurations"),
+                h3(style = "margin: 0;", textOutput("overview_n_configs", inline = TRUE))
+              )
+            ),
+            column(3,
+              wellPanel(style = "text-align: center;",
+                h6(style = "color: #6c757d; margin-bottom: 5px;", "Batches"),
+                h3(style = "margin: 0;", textOutput("overview_n_batches", inline = TRUE))
+              )
+            ),
+            column(3,
+              wellPanel(style = "text-align: center;",
+                h6(style = "color: #6c757d; margin-bottom: 5px;", "Date Range"),
+                div(style = "font-size: 0.95em;",
+                  textOutput("overview_date_range", inline = TRUE)
+                )
+              )
+            )
+          ),
+          hr(),
+          h5("Coverage Matrix: Simulations per Configuration"),
+          p(style = "color: #6c757d;",
+            "Each cell shows the number of simulations for that (n, phi) combination. ",
+            "Faceted by innovation distribution. Empty/missing cells indicate gaps in coverage."
+          ),
+          plotOutput("coverage_matrix", height = "450px")
+        ),
+
+        # =====================================================================
+        # Tab 2: Rejection Rates Table
+        # =====================================================================
         tabPanel(
           "Rejection Rates",
-          icon = icon("chart-bar"),
           br(),
-          h4("Rejection Rates Summary"),
-          p("Aggregated rejection rates across all completed trials for the selected study."),
-          DTOutput("rejection_rates_table"),
-          br(),
-          h4("Rejection Rates by Trial"),
-          DTOutput("rejection_rates_by_trial_table")
-        ),
-
-        # Tab 2: Visualizations
-        tabPanel(
-          "Visualizations",
-          icon = icon("chart-line"),
-          br(),
-          h4("Rejection Rate Analysis"),
           fluidRow(
-            column(6, plotOutput("plot_reject_by_n", height = "350px")),
-            column(6, plotOutput("plot_method_compare", height = "350px"))
+            column(9, h4("Rejection Rate Summary")),
+            column(3, downloadButton("export_csv", "Export CSV",
+                                     class = "btn-sm btn-outline-secondary pull-right"))
           ),
-          hr(),
-          h4("Study Comparison"),
-          p("Compare rejection rates across selected studies (select multiple studies above)."),
-          fluidRow(
-            column(12, plotOutput("plot_study_compare", height = "350px"))
-          ),
-          hr(),
-          h4("P-value Distribution"),
-          p("Under the null hypothesis, p-values should be uniformly distributed."),
-          fluidRow(
-            column(6, plotOutput("plot_pvalue_hist", height = "300px")),
-            column(6, plotOutput("plot_pvalue_qq", height = "300px"))
-          )
+          DTOutput("rejection_table")
         ),
 
-        # Tab 3: Cross-Study Comparison
+        # =====================================================================
+        # Tab 3: Plots
+        # =====================================================================
         tabPanel(
-          "Cross-Study",
-          icon = icon("balance-scale"),
+          "Plots",
           br(),
-          h4("Rejection Rates by Error Type"),
-          p("Compare CO, COB, COBA rejection rates across error types for fixed (phi, n)."),
-          fluidRow(
-            column(4, selectInput("compare_phi", "Phi", choices = c(0.80, 0.95, 0.99))),
-            column(4, selectInput("compare_n", "Sample Size", choices = c(50, 100, 250, 500)))
-          ),
-          DTOutput("comparison_table"),
-          br(),
-          h4("Visual Comparison"),
-          plotOutput("comparison_plot", height = "400px")
-        ),
-
-        # Tab 4: Studies
-        tabPanel(
-          "Studies",
-          icon = icon("folder"),
-          br(),
-          h4("All Studies"),
-          DTOutput("studies_table")
-        ),
-
-        # Tab 4: DGP Configs
-        tabPanel(
-          "DGP Configs",
-          icon = icon("cogs"),
-          br(),
-          h4("Data Generating Process Configurations"),
-          DTOutput("dgp_table")
-        ),
-
-        # Tab 5: Method Configs
-        tabPanel(
-          "Methods",
-          icon = icon("wrench"),
-          br(),
-          h4("Bootstrap Method Configurations"),
-          DTOutput("method_table")
-        ),
-
-        # Tab 6: Trials
-        tabPanel(
-          "Trials",
-          icon = icon("tasks"),
-          br(),
-          h4("Trials"),
-          p("Execution batches within the selected study."),
-          DTOutput("trials_table")
-        ),
-
-        # Tab 7: Runs
-        tabPanel(
-          "Runs",
-          icon = icon("list"),
-          br(),
-          h4("Individual Runs"),
-          p("Select a run to view its bootstrap distribution."),
-          DTOutput("runs_table"),
-          br(),
-          conditionalPanel(
-            condition = "input.runs_table_rows_selected.length > 0",
-            h4("Bootstrap Distribution"),
+          div(class = "plot-controls",
             fluidRow(
-              column(6, plotOutput("boot_dist_hist", height = "300px")),
-              column(6, plotOutput("boot_dist_ecdf", height = "300px"))
-            ),
-            verbatimTextOutput("run_details")
+              column(3,
+                selectInput("plot_type", "Plot Type",
+                            choices = c("Power Curve" = "power_curve",
+                                        "Heatmap" = "heatmap",
+                                        "Deviation from Nominal" = "deviation",
+                                        "Rate vs Sample Size" = "rate_vs_n",
+                                        "Method Forest Plot" = "forest"))
+              ),
+              column(3,
+                conditionalPanel(
+                  condition = "input.plot_type == 'power_curve' || input.plot_type == 'heatmap' || input.plot_type == 'rate_vs_n'",
+                  selectInput("rate_type", "Rate Type",
+                              choices = c("Bootstrap" = "reject_05",
+                                          "Asymptotic" = "reject_asymp_05",
+                                          "COBA" = "reject_adj_05"))
+                )
+              ),
+              column(3,
+                conditionalPanel(
+                  condition = "input.plot_type == 'power_curve'",
+                  selectInput("facet_by", "Facet By",
+                              choices = c("Sample Size (n)" = "n",
+                                          "Innovation" = "innov_dist",
+                                          "None" = "none"))
+                ),
+                conditionalPanel(
+                  condition = "input.plot_type == 'rate_vs_n'",
+                  selectInput("rate_vs_n_facet", "Facet By",
+                              choices = c("Innovation" = "innov_dist",
+                                          "Phi" = "phi",
+                                          "None" = "none"))
+                )
+              )
+            )
+          ),
+          plotOutput("main_plot", height = "500px"),
+          br(),
+          downloadButton("export_plot", "Download Plot (PNG)",
+                         class = "btn-sm btn-outline-secondary")
+        ),
+
+        # =====================================================================
+        # Tab 4: P-value Diagnostics
+        # =====================================================================
+        tabPanel(
+          "P-value Diagnostics",
+          br(),
+          h4("P-value Calibration Diagnostics"),
+          p(style = "color: #6c757d;",
+            "Under H0 (phi = 0), p-values should be uniformly distributed on [0, 1]. ",
+            "Non-uniformity indicates size distortion. Filter to phi = 0 configs to check calibration."
+          ),
+
+          div(class = "plot-controls",
+            fluidRow(
+              column(3,
+                selectizeInput("pval_n_filter", "Sample Size (n)",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("pval_phi_filter", "Phi Value",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("pval_innov_filter", "Innovation Distribution",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                div(style = "margin-top: 25px;",
+                  textOutput("pval_status")
+                )
+              )
+            )
+          ),
+
+          # P-value histogram
+          wellPanel(
+            h5("P-value Histograms"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Histograms of p-values for each method. ",
+              "Under H0, these should be approximately uniform (flat)."),
+            plotOutput("pval_hist", height = "300px")
+          ),
+
+          # QQ plot
+          wellPanel(
+            h5("P-value QQ Plot"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Quantile-quantile plot against Uniform(0, 1). ",
+              "Points on the diagonal indicate well-calibrated p-values."),
+            plotOutput("pval_qq", height = "350px")
+          ),
+
+          # Method comparison scatter
+          wellPanel(
+            h5("P-value Method Comparison"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Scatter plots comparing p-values between methods. ",
+              "Points on the diagonal indicate agreement."),
+            plotOutput("pval_scatter", height = "350px")
           )
         ),
 
-        # Tab 8: Custom Query
+        # =====================================================================
+        # Tab 5: Bootstrap Distribution
+        # =====================================================================
         tabPanel(
-          "SQL Query",
-          icon = icon("database"),
+          "Bootstrap Distribution",
           br(),
-          h4("Custom SQL Query"),
-          p("Run custom queries against the database. Available tables: studies, dgp_configs, method_configs, trials, runs."),
-          p("Views: v_run_summary, v_rejection_rates, v_rejection_rates_by_trial"),
-          textAreaInput("custom_sql", NULL,
-                        value = "SELECT * FROM v_rejection_rates LIMIT 100",
-                        rows = 4, width = "100%"),
-          actionButton("run_query", "Run Query", icon = icon("play"), class = "btn-primary"),
-          br(), br(),
-          DTOutput("custom_query_result")
+          fluidRow(
+            column(4,
+              numericInput("sim_id_input", "Simulation ID (sim_id):",
+                           value = 1, min = 1, step = 1)
+            ),
+            column(4,
+              actionButton("load_dist", "Load Distribution",
+                           class = "btn-primary")
+            )
+          ),
+          br(),
+          plotOutput("dist_plot", height = "400px"),
+          verbatimTextOutput("dist_summary")
+        ),
+
+        # =====================================================================
+        # Tab 6: Analysis Grids
+        # =====================================================================
+        tabPanel(
+          "Analysis Grids",
+          br(),
+          h4("Rejection Rate Comparison Grids"),
+          p(style = "color: #6c757d;",
+            "Each grid fixes two dimensions and varies the third. ",
+            "Rates are color-coded: ",
+            span(style = "background-color:#fff3cd; padding:2px 6px; border-radius:3px;", "< 0.03"),
+            " ",
+            span(style = "background-color:#d4edda; padding:2px 6px; border-radius:3px;", "0.03 \u2013 0.07"),
+            " ",
+            span(style = "background-color:#f8d7da; padding:2px 6px; border-radius:3px;", "> 0.07")
+          ),
+
+          # Grid 1: By Sample Size
+          wellPanel(
+            h5("By Sample Size"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Fix innovation distribution and phi; rows vary by n"),
+            fluidRow(
+              column(3,
+                selectInput("grid1_innov", "Innovation Distribution:",
+                            choices = NULL)
+              ),
+              column(3,
+                selectInput("grid1_phi", "Phi:",
+                            choices = NULL)
+              )
+            ),
+            DTOutput("grid1_table")
+          ),
+
+          # Grid 2: By Phi
+          wellPanel(
+            h5("By Phi"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Fix innovation distribution and n; rows vary by phi"),
+            fluidRow(
+              column(3,
+                selectInput("grid2_innov", "Innovation Distribution:",
+                            choices = NULL)
+              ),
+              column(3,
+                selectInput("grid2_n", "Sample Size (n):",
+                            choices = NULL)
+              )
+            ),
+            DTOutput("grid2_table")
+          ),
+
+          # Grid 3: By Distribution
+          wellPanel(
+            h5("By Innovation Distribution"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Fix phi and n; rows vary by innovation distribution"),
+            fluidRow(
+              column(3,
+                selectInput("grid3_phi", "Phi:",
+                            choices = NULL)
+              ),
+              column(3,
+                selectInput("grid3_n", "Sample Size (n):",
+                            choices = NULL)
+              )
+            ),
+            DTOutput("grid3_table")
+          )
+        ),
+
+        # =====================================================================
+        # Tab 7: Parallel Coordinates
+        # =====================================================================
+        tabPanel(
+          "Parallel Coordinates",
+          br(),
+          h4("Parallel Coordinates Plots"),
+          p(style = "color: #6c757d;",
+            "Each line represents one (n, phi, innov_dist) configuration. ",
+            "Axes are scaled to [0, 1] with original values shown. ",
+            "Use the filters below to reduce clutter."
+          ),
+
+          # Shared filters for this tab
+          div(class = "plot-controls",
+            fluidRow(
+              column(3,
+                selectizeInput("pc_n_filter", "Sample Size (n)",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("pc_phi_filter", "Phi Value",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("pc_innov_filter", "Innovation Distribution",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              )
+            )
+          ),
+
+          # Plot 1: Full Profile
+          wellPanel(
+            h5("Full Profile"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Axes: n \u2192 phi \u2192 CO \u2192 COB \u2192 COBA. ",
+              "Color by innovation distribution."),
+            plotOutput("pc_full_plot", height = "350px")
+          ),
+
+          # Plot 2: Method Comparison
+          wellPanel(
+            h5("Method Comparison"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Axes: CO \u2192 COB \u2192 COBA. ",
+              "Focused view comparing how the three methods relate."),
+            fluidRow(
+              column(3,
+                selectInput("pc_color_by", "Color by:",
+                            choices = c("Innovation" = "innov_dist",
+                                        "Sample Size (n)" = "n",
+                                        "Phi" = "phi"))
+              )
+            ),
+            plotOutput("pc_method_plot", height = "350px")
+          ),
+
+          # Plot 3: Single-Method Sensitivity
+          wellPanel(
+            h5("Single-Method Sensitivity"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Axes: n \u2192 phi \u2192 Rate. ",
+              "How one method responds to DGP parameters."),
+            fluidRow(
+              column(3,
+                selectInput("pc_method", "Method:",
+                            choices = c("Bootstrap (COB)" = "reject_05",
+                                        "Asymptotic (CO)" = "reject_asymp_05",
+                                        "COBA" = "reject_adj_05"))
+              )
+            ),
+            plotOutput("pc_sensitivity_plot", height = "350px")
+          )
+        ),
+
+        # =====================================================================
+        # Tab 8: Diagnostics
+        # =====================================================================
+        tabPanel(
+          "Diagnostics",
+          br(),
+          h4("Simulation Diagnostics"),
+          p(style = "color: #6c757d;",
+            "Validates the Monte Carlo machinery: null model fits, ",
+            "convergence of rejection rates, batch-to-batch consistency, ",
+            "and test statistic distributions."
+          ),
+
+          div(class = "plot-controls",
+            fluidRow(
+              column(3,
+                selectizeInput("diag_n_filter", "Sample Size (n)",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("diag_phi_filter", "Phi Value",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                selectizeInput("diag_innov_filter", "Innovation Distribution",
+                               choices = NULL, multiple = TRUE,
+                               options = list(placeholder = "All..."))
+              ),
+              column(3,
+                div(style = "margin-top: 25px;",
+                  textOutput("diag_status")
+                )
+              )
+            )
+          ),
+
+          # AR order distribution
+          wellPanel(
+            h5("Fitted AR Order Distribution"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "How often each AR order is selected under the null. ",
+              "For AR(1) DGPs, order 1 should dominate."),
+            plotOutput("diag_ar_order_plot", height = "300px")
+          ),
+
+          # Estimated phi distribution
+          wellPanel(
+            h5("Estimated Null AR Coefficient Distribution"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Distribution of the first fitted AR coefficient across simulations. ",
+              "Should cluster near the true phi value."),
+            plotOutput("diag_phi_plot", height = "300px")
+          ),
+
+          # MC Convergence
+          wellPanel(
+            h5("Monte Carlo Convergence"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Running rejection rate as simulations accumulate. ",
+              "The rate should stabilize, confirming sufficient MC sample size."),
+            fluidRow(
+              column(4,
+                selectInput("diag_conv_method", "Method:",
+                            choices = c("Bootstrap (COB)" = "pvalue",
+                                        "Asymptotic (CO)" = "pvalue_asymp",
+                                        "COBA" = "pvalue_adj"))
+              )
+            ),
+            plotOutput("diag_convergence_plot", height = "350px")
+          ),
+
+          # Batch Consistency
+          wellPanel(
+            h5("Batch-to-Batch Consistency"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Per-batch rejection rates for each configuration. ",
+              "Low spread indicates stable Monte Carlo estimates."),
+            fluidRow(
+              column(4,
+                selectInput("diag_batch_method", "Method:",
+                            choices = c("Bootstrap (COB)" = "reject_05",
+                                        "Asymptotic (CO)" = "reject_asymp_05",
+                                        "COBA" = "reject_adj_05"))
+              )
+            ),
+            plotOutput("diag_batch_plot", height = "350px")
+          ),
+
+          # Test statistic distribution
+          wellPanel(
+            h5("Test Statistic Distribution"),
+            p(style = "color: #6c757d; margin-bottom: 10px;",
+              "Distribution of the observed test statistic across simulations. ",
+              "Helps identify outliers or unexpected distributional shapes."),
+            plotOutput("diag_tstat_plot", height = "300px")
+          )
         )
       )
     )
@@ -212,1021 +515,1439 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 
   # ---------------------------------------------------------------------------
-  # Database Connection
+  # Database connection
   # ---------------------------------------------------------------------------
+  db_path <- getOption("tstse.viewer_db")
+  con <- dbConnect(duckdb(), dbdir = db_path, read_only = TRUE)
+  onStop(function() dbDisconnect(con, shutdown = TRUE))
 
-  # Get database path from options (set by launcher function)
-  db_path <- reactiveVal(getOption("tstse.viewer_db", NULL))
+  # ---------------------------------------------------------------------------
+  # Populate initial filter choices
+  # ---------------------------------------------------------------------------
+  init_choices <- tryCatch({
+    n_vals <- dbGetQuery(con, "SELECT DISTINCT n FROM simulations ORDER BY n")
+    phi_vals <- dbGetQuery(con, "SELECT DISTINCT phi FROM simulations ORDER BY phi")
+    innov_vals <- dbGetQuery(con, "SELECT DISTINCT innov_dist FROM simulations ORDER BY innov_dist")
+    list(
+      n = as.character(n_vals$n),
+      phi = as.character(phi_vals$phi),
+      innov = innov_vals$innov_dist
+    )
+  }, error = function(e) list(n = character(0), phi = character(0), innov = character(0)))
 
-  # Database connection (reactive)
-  con <- reactive({
-    path <- db_path()
-    if (is.null(path) || !file.exists(path)) {
-      return(NULL)
+  updateSelectizeInput(session, "n_filter", choices = init_choices$n, server = FALSE)
+  updateSelectizeInput(session, "phi_filter", choices = init_choices$phi, server = FALSE)
+  updateSelectizeInput(session, "innov_filter", choices = init_choices$innov, server = FALSE)
+
+  # Populate Analysis Grid dropdowns (single-select, default to first value)
+  updateSelectInput(session, "grid1_innov", choices = init_choices$innov,
+                    selected = init_choices$innov[1])
+  updateSelectInput(session, "grid1_phi", choices = init_choices$phi,
+                    selected = init_choices$phi[1])
+  updateSelectInput(session, "grid2_innov", choices = init_choices$innov,
+                    selected = init_choices$innov[1])
+  updateSelectInput(session, "grid2_n", choices = init_choices$n,
+                    selected = init_choices$n[1])
+  updateSelectInput(session, "grid3_phi", choices = init_choices$phi,
+                    selected = init_choices$phi[1])
+  updateSelectInput(session, "grid3_n", choices = init_choices$n,
+                    selected = init_choices$n[1])
+
+  # Populate Parallel Coordinates filters
+  updateSelectizeInput(session, "pc_n_filter", choices = init_choices$n, server = FALSE)
+  updateSelectizeInput(session, "pc_phi_filter", choices = init_choices$phi, server = FALSE)
+  updateSelectizeInput(session, "pc_innov_filter", choices = init_choices$innov, server = FALSE)
+
+  # Populate P-value Diagnostics filters
+  updateSelectizeInput(session, "pval_n_filter", choices = init_choices$n, server = FALSE)
+  updateSelectizeInput(session, "pval_phi_filter", choices = init_choices$phi, server = FALSE)
+  updateSelectizeInput(session, "pval_innov_filter", choices = init_choices$innov, server = FALSE)
+
+  # Populate Diagnostics filters
+  updateSelectizeInput(session, "diag_n_filter", choices = init_choices$n, server = FALSE)
+  updateSelectizeInput(session, "diag_phi_filter", choices = init_choices$phi, server = FALSE)
+  updateSelectizeInput(session, "diag_innov_filter", choices = init_choices$innov, server = FALSE)
+
+  # ---------------------------------------------------------------------------
+  # Build query with filters
+  # ---------------------------------------------------------------------------
+  build_query <- function(view_name) {
+    sql <- paste0("SELECT * FROM ", view_name, " WHERE 1=1")
+    params <- list()
+
+    if (length(input$n_filter) > 0) {
+      placeholders <- paste(rep("?", length(input$n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", placeholders, ")")
+      params <- c(params, as.list(as.integer(input$n_filter)))
     }
+    if (length(input$phi_filter) > 0) {
+      placeholders <- paste(rep("?", length(input$phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", placeholders, ")")
+      params <- c(params, as.list(as.numeric(input$phi_filter)))
+    }
+    if (length(input$innov_filter) > 0) {
+      placeholders <- paste(rep("?", length(input$innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", placeholders, ")")
+      params <- c(params, as.list(input$innov_filter))
+    }
+
+    sql <- paste0(sql, " ORDER BY innov_dist, n, phi")
+    list(sql = sql, params = params)
+  }
+
+  # ---------------------------------------------------------------------------
+  # Grid query helper (independent of sidebar filters)
+  # ---------------------------------------------------------------------------
+  grid_query <- function(innov_dist = NULL, phi = NULL, n = NULL,
+                         order_col = "n") {
+    sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
+    params <- list()
+
+    if (!is.null(innov_dist)) {
+      sql <- paste0(sql, " AND innov_dist = ?")
+      params <- c(params, list(innov_dist))
+    }
+    if (!is.null(phi)) {
+      sql <- paste0(sql, " AND phi = ?")
+      params <- c(params, list(as.numeric(phi)))
+    }
+    if (!is.null(n)) {
+      sql <- paste0(sql, " AND n = ?")
+      params <- c(params, list(as.integer(n)))
+    }
+
+    sql <- paste0(sql, " ORDER BY ", order_col)
     tryCatch(
-      dbConnect(duckdb(), dbdir = path, read_only = TRUE),
-      error = function(e) NULL
+      dbGetQuery(con, sql, params = params),
+      error = function(e) data.frame()
+    )
+  }
+
+  # ---------------------------------------------------------------------------
+  # Grid DT formatting helper
+  # ---------------------------------------------------------------------------
+  format_grid_dt <- function(df, row_label_col, row_label_name) {
+    if (nrow(df) == 0) {
+      return(datatable(data.frame(Message = "No data for this combination"),
+                       rownames = FALSE, options = list(dom = "t")))
+    }
+
+    display_df <- data.frame(
+      Label    = df[[row_label_col]],
+      n_sims   = df$n_sims,
+      CO       = df$reject_asymp_05,
+      CO_SE    = df$reject_asymp_05_se,
+      COB      = df$reject_05,
+      COB_SE   = df$reject_05_se,
+      COBA     = df$reject_adj_05,
+      COBA_SE  = df$reject_adj_05_se
+    )
+
+    col_names <- c(row_label_name, "Sims", "CO Rate", "CO SE",
+                   "COB Rate", "COB SE", "COBA Rate", "COBA SE")
+
+    dt <- datatable(
+      display_df,
+      colnames = col_names,
+      rownames = FALSE,
+      options = list(
+        dom = "t",
+        paging = FALSE,
+        searching = FALSE,
+        ordering = FALSE,
+        columnDefs = list(
+          list(targets = c(3, 5, 7), className = "dt-body-right")
+        )
+      )
+    )
+
+    rate_cols <- c("CO", "COB", "COBA")
+    se_cols <- c("CO_SE", "COB_SE", "COBA_SE")
+
+    dt <- formatRound(dt, columns = rate_cols, digits = 4)
+    dt <- formatRound(dt, columns = se_cols, digits = 4)
+
+    for (col in rate_cols) {
+      dt <- formatStyle(dt, col,
+        backgroundColor = styleInterval(
+          c(0.03, 0.07),
+          c("#fff3cd", "#d4edda", "#f8d7da")
+        )
+      )
+    }
+
+    dt
+  }
+
+  # ---------------------------------------------------------------------------
+  # Curated data reactive
+  # ---------------------------------------------------------------------------
+  curated_data <- reactive({
+    view_name <- if (input$compare_batches) {
+      "v_rejection_rates_by_batch"
+    } else {
+      "v_rejection_rates"
+    }
+    q <- build_query(view_name)
+    tryCatch(
+      dbGetQuery(con, q$sql, params = q$params),
+      error = function(e) data.frame()
     )
   })
 
-  # Clean up connection on session end
- session$onSessionEnded(function() {
-    conn <- isolate(con())
-    if (!is.null(conn)) {
-      tryCatch(dbDisconnect(conn), error = function(e) NULL)
-    }
-  })
+  # ---------------------------------------------------------------------------
+  # Cascading filter updates
+  # ---------------------------------------------------------------------------
+  observe({
+    df <- curated_data()
+    if (nrow(df) == 0) return()
 
-  output$db_path_display <- renderText({
-    path <- db_path()
-    if (is.null(path)) {
-      "No database loaded"
-    } else {
-      basename(path)
-    }
-  })
+    n_choices <- sort(unique(df$n))
+    phi_choices <- sort(unique(df$phi))
+    innov_choices <- sort(unique(df$innov_dist))
 
-  # Refresh trigger
-  refresh_trigger <- reactiveVal(0)
-  observeEvent(input$refresh_db, {
-    refresh_trigger(refresh_trigger() + 1)
+    updateSelectizeInput(session, "n_filter", choices = as.character(n_choices),
+                         selected = intersect(input$n_filter, as.character(n_choices)),
+                         server = FALSE)
+    updateSelectizeInput(session, "phi_filter", choices = as.character(phi_choices),
+                         selected = intersect(input$phi_filter, as.character(phi_choices)),
+                         server = FALSE)
+    updateSelectizeInput(session, "innov_filter", choices = innov_choices,
+                         selected = intersect(input$innov_filter, innov_choices),
+                         server = FALSE)
   })
 
   # Clear all filters
   observeEvent(input$clear_filters, {
-    updateSelectizeInput(session, "study_select", selected = character(0))
-    updateSelectInput(session, "error_type_select", selected = "")
-    updateSelectInput(session, "dgp_select", selected = "")
-    updateSelectInput(session, "method_select", selected = "")
-    updateSelectInput(session, "trial_select", selected = "All")
+    updateSelectizeInput(session, "n_filter", selected = character(0))
+    updateSelectizeInput(session, "phi_filter", selected = character(0))
+    updateSelectizeInput(session, "innov_filter", selected = character(0))
+    updateCheckboxInput(session, "compare_batches", value = FALSE)
+  })
+
+  # Status text
+  output$status_text <- renderText({
+    df <- curated_data()
+    if (nrow(df) == 0) return("No data matching filters")
+    total_sims <- sum(df$n_sims, na.rm = TRUE)
+    paste0(nrow(df), " scenarios, ", format(total_sims, big.mark = ","), " total sims")
   })
 
   # ---------------------------------------------------------------------------
-  # Data Queries (reactive)
+  # Tab 1: Study Overview
   # ---------------------------------------------------------------------------
 
-  # Studies
-  studies_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    if (is.null(conn)) return(data.frame())
-    tryCatch(
-      dbGetQuery(conn, "SELECT * FROM studies ORDER BY created_at DESC"),
-      error = function(e) data.frame()
-    )
+  overview_stats <- reactive({
+    tryCatch({
+      dbGetQuery(con, "
+        SELECT COUNT(*) as total_sims,
+               COUNT(DISTINCT batch_id) as n_batches,
+               MIN(created_at) as first_sim,
+               MAX(created_at) as last_sim
+        FROM simulations
+      ")
+    }, error = function(e) data.frame(total_sims = 0, n_batches = 0,
+                                       first_sim = NA, last_sim = NA))
   })
 
-  # DGP Configs
-  dgp_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    if (is.null(conn)) return(data.frame())
-    tryCatch(
-      dbGetQuery(conn, "
-        SELECT dgp_id, dgp_name, n, ar_phi, ma_theta, vara,
-               innov_dist, has_trend, trend_slope, created_at
-        FROM dgp_configs
-        ORDER BY created_at DESC
-      "),
-      error = function(e) data.frame()
-    )
+  overview_coverage <- reactive({
+    tryCatch({
+      dbGetQuery(con, "
+        SELECT n, phi, innov_dist, COUNT(*) as n_sims
+        FROM simulations
+        GROUP BY n, phi, innov_dist
+        ORDER BY innov_dist, n, phi
+      ")
+    }, error = function(e) data.frame())
   })
 
-  # Method Configs
-  method_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    if (is.null(conn)) return(data.frame())
-    tryCatch(
-      dbGetQuery(conn, "
-        SELECT method_id, method_name, nb, maxp, ar_method,
-               criterion, bootadj, stat_fn_name, garch_dist, created_at
-        FROM method_configs
-        ORDER BY created_at DESC
-      "),
-      error = function(e) data.frame()
-    )
+  output$overview_total_sims <- renderText({
+    stats <- overview_stats()
+    format(stats$total_sims[1], big.mark = ",")
   })
 
-  # Trials (filtered by study, DGP, and method - supports multiple studies)
-  trials_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    study_ids <- input$study_select  # Now a vector (multi-select)
-    dgp_id <- input$dgp_select
-    method_id <- input$method_select
+  output$overview_n_configs <- renderText({
+    df <- overview_coverage()
+    as.character(nrow(df))
+  })
 
-    if (is.null(conn)) return(data.frame())
+  output$overview_n_batches <- renderText({
+    stats <- overview_stats()
+    as.character(stats$n_batches[1])
+  })
 
-    # Build query with optional filters
-    sql <- "
-      SELECT t.trial_id, t.trial_name, t.n_planned, t.n_completed,
-             t.status, t.elapsed_seconds, t.started_at, t.completed_at,
-             d.dgp_name, m.method_name, s.study_name
-      FROM trials t
-      JOIN dgp_configs d ON t.dgp_id = d.dgp_id
-      JOIN method_configs m ON t.method_id = m.method_id
-      JOIN studies s ON t.study_id = s.study_id
-      WHERE 1=1"
-    params <- list()
+  output$overview_date_range <- renderText({
+    stats <- overview_stats()
+    if (is.na(stats$first_sim[1])) return("No data")
+    paste0(format(stats$first_sim[1], "%Y-%m-%d"), " to ",
+           format(stats$last_sim[1], "%Y-%m-%d"))
+  })
 
-    # Filter by study (supports multiple)
-    if (length(study_ids) > 0 && !all(study_ids == "")) {
-      placeholders <- paste(rep("?", length(study_ids)), collapse = ", ")
-      sql <- paste(sql, sprintf("AND t.study_id IN (%s)", placeholders))
-      params <- c(params, as.list(study_ids))
+  output$coverage_matrix <- renderPlot({
+    df <- overview_coverage()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data", cex = 1.2, col = "grey50")
+      return()
     }
 
-    if (!is.null(dgp_id) && dgp_id != "") {
-      sql <- paste(sql, "AND t.dgp_id = ?")
-      params <- c(params, dgp_id)
-    }
-    if (!is.null(method_id) && method_id != "") {
-      sql <- paste(sql, "AND t.method_id = ?")
-      params <- c(params, method_id)
-    }
+    df$n <- factor(df$n)
+    df$phi <- factor(df$phi)
 
-    sql <- paste(sql, "ORDER BY s.study_name, t.started_at DESC")
+    p <- ggplot(df, aes(x = phi, y = n, fill = n_sims)) +
+      geom_tile(color = "white", linewidth = 0.5) +
+      geom_text(aes(label = format(n_sims, big.mark = ",")),
+                size = 3.5, color = "black") +
+      scale_fill_gradient(low = "#deebf7", high = "#2171b5",
+                          name = "Simulations") +
+      labs(x = expression(phi), y = "Sample Size (n)") +
+      theme_minimal(base_size = 14) +
+      theme(
+        panel.grid = element_blank(),
+        legend.position = "right",
+        strip.text = element_text(face = "bold")
+      ) +
+      facet_wrap(~ innov_dist)
 
-    tryCatch(
-      dbGetQuery(conn, sql, params = params),
-      error = function(e) data.frame()
-    )
+    print(p)
   })
 
-  # Runs (filtered by trial, or by study+DGP+method when trial="All")
-  runs_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    trial_id <- input$trial_select
-    study_ids <- input$study_select  # Now a vector (multi-select)
-    dgp_id <- input$dgp_select
-    method_id <- input$method_select
+  # ---------------------------------------------------------------------------
+  # Tab 2: Rejection Rates Table
+  # ---------------------------------------------------------------------------
 
-    if (is.null(conn)) return(data.frame())
+  output$rejection_table <- renderDT({
+    df <- curated_data()
+    if (nrow(df) == 0) return(datatable(data.frame(Message = "No data")))
 
-    # If specific trial selected, use that (no other filters needed)
-    if (!is.null(trial_id) && trial_id != "" && trial_id != "All") {
-      tryCatch(
-        dbGetQuery(conn, "
-          SELECT run_id, iteration_num, obs_stat, pvalue, pvalue_upper,
-                 pvalue_lower, pvalue_asymp, pvalue_adj, master_seed
-          FROM runs
-          WHERE trial_id = ?
-          ORDER BY iteration_num
-          LIMIT 1000
-        ", params = list(trial_id)),
-        error = function(e) data.frame()
-      )
+    # Select display columns based on mode
+    if (input$compare_batches) {
+      display_cols <- c("batch_id", "batch_label", "innov_dist", "n", "phi",
+                        "n_sims", "reject_05", "reject_05_se",
+                        "reject_asymp_05", "reject_asymp_05_se",
+                        "reject_adj_05", "reject_adj_05_se")
+      pretty_names <- c("Batch", "Label", "Innovation", "n", "Phi",
+                        "Sims", "Boot Rate", "Boot SE",
+                        "Asymp Rate", "Asymp SE",
+                        "COBA Rate", "COBA SE")
     } else {
-      # Trial is "All" - apply study, DGP, and method filters
-      sql <- "
-        SELECT r.run_id, r.iteration_num, r.obs_stat, r.pvalue,
-               r.pvalue_upper, r.pvalue_lower, r.pvalue_asymp,
-               r.pvalue_adj, r.master_seed, t.trial_name, s.study_name
-        FROM runs r
-        JOIN trials t ON r.trial_id = t.trial_id
-        JOIN studies s ON t.study_id = s.study_id
-        WHERE 1=1"
-      params <- list()
-
-      # Filter by study (supports multiple)
-      if (length(study_ids) > 0 && !all(study_ids == "")) {
-        placeholders <- paste(rep("?", length(study_ids)), collapse = ", ")
-        sql <- paste(sql, sprintf("AND t.study_id IN (%s)", placeholders))
-        params <- c(params, as.list(study_ids))
-      }
-
-      if (!is.null(dgp_id) && dgp_id != "") {
-        sql <- paste(sql, "AND t.dgp_id = ?")
-        params <- c(params, dgp_id)
-      }
-      if (!is.null(method_id) && method_id != "") {
-        sql <- paste(sql, "AND t.method_id = ?")
-        params <- c(params, method_id)
-      }
-
-      sql <- paste(sql, "ORDER BY s.study_name, t.started_at DESC, r.iteration_num LIMIT 1000")
-
-      tryCatch(
-        dbGetQuery(conn, sql, params = params),
-        error = function(e) data.frame()
-      )
-    }
-  })
-
-  # Rejection rates (filtered by study, error_type, DGP, and method - supports multiple studies)
-  rejection_rates_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    study_ids <- input$study_select  # Now a vector (multi-select)
-    error_type <- input$error_type_select
-    dgp_id <- input$dgp_select
-    method_id <- input$method_select
-
-    if (is.null(conn)) return(data.frame())
-
-    # Build query with filters
-    sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
-    params <- list()
-
-    # Filter by study (supports multiple)
-    if (length(study_ids) > 0 && !all(study_ids == "")) {
-      studies <- studies_data()
-      study_names <- studies$study_name[studies$study_id %in% study_ids]
-      if (length(study_names) > 0) {
-        placeholders <- paste(rep("?", length(study_names)), collapse = ", ")
-        sql <- paste(sql, sprintf("AND study_name IN (%s)", placeholders))
-        params <- c(params, as.list(study_names))
-      }
+      display_cols <- c("innov_dist", "n", "phi", "n_sims", "n_batches",
+                        "reject_05", "reject_05_se",
+                        "reject_asymp_05", "reject_asymp_05_se",
+                        "reject_adj_05", "reject_adj_05_se")
+      pretty_names <- c("Innovation", "n", "Phi", "Sims", "Batches",
+                        "Boot Rate", "Boot SE",
+                        "Asymp Rate", "Asymp SE",
+                        "COBA Rate", "COBA SE")
     }
 
-    # Filter by error_type
-    if (!is.null(error_type) && error_type != "") {
-      sql <- paste(sql, "AND error_type = ?")
-      params <- c(params, error_type)
-    }
+    available <- intersect(display_cols, names(df))
+    df_show <- df[, available, drop = FALSE]
+    col_names <- pretty_names[display_cols %in% available]
 
-    # Filter by DGP (need to get dgp_name from dgp_id)
-    if (!is.null(dgp_id) && dgp_id != "") {
-      dgp_info <- tryCatch(
-        dbGetQuery(conn, "SELECT dgp_name FROM dgp_configs WHERE dgp_id = ?",
-                   params = list(dgp_id)),
-        error = function(e) data.frame()
-      )
-      if (nrow(dgp_info) > 0) {
-        sql <- paste(sql, "AND dgp_name = ?")
-        params <- c(params, dgp_info$dgp_name[1])
-      }
-    }
-
-    # Filter by method (need to get method_name from method_id)
-    if (!is.null(method_id) && method_id != "") {
-      method_info <- tryCatch(
-        dbGetQuery(conn, "SELECT method_name FROM method_configs WHERE method_id = ?",
-                   params = list(method_id)),
-        error = function(e) data.frame()
-      )
-      if (nrow(method_info) > 0) {
-        sql <- paste(sql, "AND method_name = ?")
-        params <- c(params, method_info$method_name[1])
-      }
-    }
-
-    tryCatch(
-      dbGetQuery(conn, sql, params = params),
-      error = function(e) data.frame()
-    )
-  })
-
-  # Rejection rates by trial (filtered by study, error_type, DGP, method - supports multiple studies)
-  rejection_rates_by_trial_data <- reactive({
-    refresh_trigger()
-    conn <- con()
-    study_ids <- input$study_select  # Now a vector (multi-select)
-    error_type <- input$error_type_select
-    dgp_id <- input$dgp_select
-    method_id <- input$method_select
-
-    if (is.null(conn)) return(data.frame())
-
-    # Build query with filters
-    sql <- "SELECT * FROM v_rejection_rates_by_trial WHERE 1=1"
-    params <- list()
-
-    # Filter by study (supports multiple)
-    if (length(study_ids) > 0 && !all(study_ids == "")) {
-      studies <- studies_data()
-      study_names <- studies$study_name[studies$study_id %in% study_ids]
-      if (length(study_names) > 0) {
-        placeholders <- paste(rep("?", length(study_names)), collapse = ", ")
-        sql <- paste(sql, sprintf("AND study_name IN (%s)", placeholders))
-        params <- c(params, as.list(study_names))
-      }
-    }
-
-    # Filter by error_type
-    if (!is.null(error_type) && error_type != "") {
-      sql <- paste(sql, "AND error_type = ?")
-      params <- c(params, error_type)
-    }
-
-    # Filter by DGP
-    if (!is.null(dgp_id) && dgp_id != "") {
-      dgp_info <- tryCatch(
-        dbGetQuery(conn, "SELECT dgp_name FROM dgp_configs WHERE dgp_id = ?",
-                   params = list(dgp_id)),
-        error = function(e) data.frame()
-      )
-      if (nrow(dgp_info) > 0) {
-        sql <- paste(sql, "AND dgp_name = ?")
-        params <- c(params, dgp_info$dgp_name[1])
-      }
-    }
-
-    # Filter by method
-    if (!is.null(method_id) && method_id != "") {
-      method_info <- tryCatch(
-        dbGetQuery(conn, "SELECT method_name FROM method_configs WHERE method_id = ?",
-                   params = list(method_id)),
-        error = function(e) data.frame()
-      )
-      if (nrow(method_info) > 0) {
-        sql <- paste(sql, "AND method_name = ?")
-        params <- c(params, method_info$method_name[1])
-      }
-    }
-
-    tryCatch(
-      dbGetQuery(conn, sql, params = params),
-      error = function(e) data.frame()
-    )
-  })
-
-  # ---------------------------------------------------------------------------
-  # Update Filter Dropdowns
-  # ---------------------------------------------------------------------------
-
-  # Update study dropdown (multi-select)
-  observe({
-    studies <- studies_data()
-    if (nrow(studies) == 0) {
-      choices <- c("No studies found" = "")
-    } else {
-      choices <- setNames(studies$study_id, studies$study_name)
-    }
-    updateSelectizeInput(session, "study_select", choices = choices,
-                         server = FALSE)
-  })
-
-  # Update DGP dropdown (filtered by selected studies - supports multiple)
-  observe({
-    refresh_trigger()
-    conn <- con()
-    study_ids <- input$study_select  # Now a vector
-
-    if (is.null(conn) || length(study_ids) == 0 || all(study_ids == "")) {
-      # No study selected - show all DGPs
-      dgps <- dgp_data()
-    } else {
-      # Show DGPs used in any of the selected studies (union)
-      placeholders <- paste(rep("?", length(study_ids)), collapse = ", ")
-      dgps <- tryCatch(
-        dbGetQuery(conn, sprintf("
-          SELECT DISTINCT d.dgp_id, d.dgp_name
-          FROM dgp_configs d
-          JOIN trials t ON d.dgp_id = t.dgp_id
-          WHERE t.study_id IN (%s)
-          ORDER BY d.dgp_name
-        ", placeholders), params = as.list(study_ids)),
-        error = function(e) data.frame()
-      )
-    }
-
-    if (nrow(dgps) == 0) {
-      choices <- c("No DGPs found" = "")
-    } else {
-      choices <- c("All" = "", setNames(dgps$dgp_id, dgps$dgp_name))
-    }
-    updateSelectInput(session, "dgp_select", choices = choices)
-  })
-
-  # Update method dropdown (filtered by selected studies - supports multiple)
-  observe({
-    refresh_trigger()
-    conn <- con()
-    study_ids <- input$study_select  # Now a vector
-
-    if (is.null(conn) || length(study_ids) == 0 || all(study_ids == "")) {
-      # No study selected - show all methods
-      methods <- method_data()
-    } else {
-      # Show methods used in any of the selected studies (union)
-      placeholders <- paste(rep("?", length(study_ids)), collapse = ", ")
-      methods <- tryCatch(
-        dbGetQuery(conn, sprintf("
-          SELECT DISTINCT m.method_id, m.method_name, m.nb
-          FROM method_configs m
-          JOIN trials t ON m.method_id = t.method_id
-          WHERE t.study_id IN (%s)
-          ORDER BY m.method_name
-        ", placeholders), params = as.list(study_ids)),
-        error = function(e) data.frame()
-      )
-    }
-
-    if (nrow(methods) == 0) {
-      choices <- c("No methods found" = "")
-    } else {
-      labels <- paste0(methods$method_name, " (nb=", methods$nb, ")")
-      choices <- c("All" = "", setNames(methods$method_id, labels))
-    }
-    updateSelectInput(session, "method_select", choices = choices)
-  })
-
-  # Update trial dropdown based on selected study
-  observe({
-    trials <- trials_data()
-    if (nrow(trials) == 0) {
-      choices <- c("No trials found" = "")
-    } else {
-      # Use first 5 chars of trial_id as prefix for differentiation
-      id_prefix <- substr(trials$trial_id, 1, 5)
-      base_name <- ifelse(
-        is.na(trials$trial_name) | trials$trial_name == "",
-        paste0("Trial ", seq_len(nrow(trials))),
-        trials$trial_name
-      )
-      labels <- paste0("(", id_prefix, ") ", base_name, " [", trials$status, "]")
-      choices <- c("All" = "All", setNames(trials$trial_id, labels))
-    }
-    updateSelectInput(session, "trial_select", choices = choices)
-  })
-
-  # ---------------------------------------------------------------------------
-  # Selection Summary
-  # ---------------------------------------------------------------------------
-
-  output$selection_summary <- renderUI({
-    runs <- runs_data()
-    trials <- trials_data()
-
-    n_runs <- nrow(runs)
-    n_trials <- nrow(trials)
-    n_completed <- sum(trials$status == "completed", na.rm = TRUE)
-
-    tagList(
-      div(class = "stat-label", "Trials: ",
-          span(paste0(n_completed, "/", n_trials, " completed"))),
-      div(class = "stat-label", "Runs shown: ", span(n_runs)),
-      if (n_runs >= 1000) div(em("(limited to 1000 rows)"))
-    )
-  })
-
-  # ---------------------------------------------------------------------------
-  # Render Tables
-  # ---------------------------------------------------------------------------
-
-  # Studies table
-  output$studies_table <- renderDT({
-    data <- studies_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No studies found")))
-
-    datatable(
-      data[, c("study_name", "study_type", "description", "created_at")],
-      selection = "single",
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE
-    )
-  })
-
-  # DGP table
-  output$dgp_table <- renderDT({
-    data <- dgp_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No DGP configs found")))
-
-    # Format ar_phi for display
-    data$ar_phi_str <- sapply(data$ar_phi, function(x) {
-      if (is.null(x) || length(x) == 0) return("-")
-      paste(round(x, 3), collapse = ", ")
-    })
-
-    datatable(
-      data[, c("dgp_name", "n", "ar_phi_str", "innov_dist", "has_trend", "trend_slope")],
-      selection = "single",
-      options = list(pageLength = 10, scrollX = TRUE),
+    dt <- datatable(
+      df_show,
+      colnames = col_names,
       rownames = FALSE,
-      colnames = c("Name", "n", "AR(phi)", "Innovation", "Trend?", "Slope")
+      filter = "top",
+      options = list(
+        pageLength = 25,
+        scrollX = TRUE,
+        order = list()
+      )
     )
-  })
 
-  # Method table
-  output$method_table <- renderDT({
-    data <- method_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No method configs found")))
+    # Round rate and SE columns
+    rate_cols <- intersect(c("reject_05", "reject_asymp_05", "reject_adj_05"), available)
+    se_cols <- intersect(c("reject_05_se", "reject_asymp_05_se", "reject_adj_05_se"), available)
 
-    datatable(
-      data[, c("method_name", "nb", "maxp", "ar_method", "criterion", "bootadj")],
-      selection = "single",
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE,
-      colnames = c("Method", "B", "maxp", "AR Method", "Criterion", "COBA?")
-    )
-  })
+    if (length(rate_cols) > 0) {
+      dt <- formatRound(dt, columns = rate_cols, digits = 4)
+    }
+    if (length(se_cols) > 0) {
+      dt <- formatRound(dt, columns = se_cols, digits = 4)
+    }
 
-  # Trials table
-  output$trials_table <- renderDT({
-    data <- trials_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No trials found")))
-
-    display_data <- data[, c("trial_name", "dgp_name", "method_name",
-                              "n_planned", "n_completed", "status", "elapsed_seconds")]
-    display_data$elapsed_seconds <- round(display_data$elapsed_seconds, 1)
-
-    datatable(
-      display_data,
-      selection = "single",
-      options = list(pageLength = 15, scrollX = TRUE),
-      rownames = FALSE,
-      colnames = c("Trial", "DGP", "Method", "Planned", "Completed", "Status", "Time (s)")
-    ) |>
-      formatStyle("status",
-        backgroundColor = styleEqual(
-          c("completed", "running", "failed"),
-          c("#d4edda", "#fff3cd", "#f8d7da")
+    # Color-code rejection rate columns
+    for (col in rate_cols) {
+      dt <- formatStyle(
+        dt, col,
+        backgroundColor = styleInterval(
+          c(0.03, 0.07),
+          c("#fff3cd", "#d4edda", "#f8d7da")  # yellow / green / red
         )
       )
+    }
+
+    dt
   })
 
-  # Runs table
-  output$runs_table <- renderDT({
-    data <- runs_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No runs found")))
-
-    # Select columns to display
-    cols <- intersect(
-      c("iteration_num", "trial_name", "obs_stat", "pvalue", "pvalue_asymp", "pvalue_adj"),
-      names(data)
-    )
-    display_data <- data[, cols, drop = FALSE]
-
-    # Round numeric columns
-    num_cols <- sapply(display_data, is.numeric)
-    display_data[num_cols] <- lapply(display_data[num_cols], function(x) round(x, 4))
-
-    datatable(
-      display_data,
-      selection = "single",
-      options = list(pageLength = 20, scrollX = TRUE),
-      rownames = FALSE
-    ) |>
-      formatStyle("pvalue",
-        backgroundColor = styleInterval(c(0.05, 0.10), c("#f8d7da", "#fff3cd", "#ffffff"))
-      )
-  })
-
-  # Rejection rates table
-  output$rejection_rates_table <- renderDT({
-    data <- rejection_rates_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No rejection rates available")))
-
-    # Format ar_phi for display
-    data$ar_phi_str <- sapply(data$ar_phi, function(x) {
-      if (is.null(x) || length(x) == 0) return("-")
-      paste(round(x, 3), collapse = ", ")
-    })
-
-    display_data <- data.frame(
-      Study = data$study_name,
-      DGP = data$dgp_name,
-      n = data$n,
-      `AR(phi)` = data$ar_phi_str,
-      Method = data$method_name,
-      `N Runs` = data$n_runs,
-      `CO (0.05)` = sprintf("%.3f (%.3f)", data$reject_co_05, data$reject_co_05_se),
-      `COB (0.05)` = sprintf("%.3f (%.3f)", data$reject_cob_05, data$reject_cob_05_se),
-      `COBA (0.05)` = sprintf("%.3f (%.3f)", data$reject_coba_05, data$reject_coba_05_se),
-      check.names = FALSE
-    )
-
-    datatable(
-      display_data,
-      selection = "none",
-      options = list(pageLength = 20, scrollX = TRUE),
-      rownames = FALSE
-    )
-  })
-
-  # Rejection rates by trial table
-  output$rejection_rates_by_trial_table <- renderDT({
-    data <- rejection_rates_by_trial_data()
-    if (nrow(data) == 0) return(datatable(data.frame(Message = "No data available")))
-
-    display_data <- data.frame(
-      Trial = data$trial_name,
-      DGP = data$dgp_name,
-      Method = data$method_name,
-      `N Runs` = data$n_runs,
-      `CO (0.05)` = round(data$reject_co_05, 3),
-      `COB (0.05)` = round(data$reject_cob_05, 3),
-      `COBA (0.05)` = round(data$reject_coba_05, 3),
-      check.names = FALSE
-    )
-
-    datatable(
-      display_data,
-      selection = "none",
-      options = list(pageLength = 10, scrollX = TRUE),
-      rownames = FALSE
-    )
-  })
+  # CSV export
+  output$export_csv <- downloadHandler(
+    filename = function() {
+      paste0("rejection_rates_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+    },
+    content = function(file) {
+      write.csv(curated_data(), file, row.names = FALSE)
+    }
+  )
 
   # ---------------------------------------------------------------------------
-  # Bootstrap Distribution Plots
+  # Tab 3: Plots
   # ---------------------------------------------------------------------------
 
-  selected_run_data <- reactive({
-    runs <- runs_data()
-    sel <- input$runs_table_rows_selected
-    if (is.null(sel) || length(sel) == 0 || nrow(runs) == 0) return(NULL)
+  current_plot <- reactive({
+    df <- curated_data()
+    if (nrow(df) == 0) return(NULL)
 
-    run_id <- runs$run_id[sel]
-    conn <- con()
-    if (is.null(conn)) return(NULL)
+    rate_col <- input$rate_type
+    if (!rate_col %in% names(df)) return(NULL)
 
+    rate_labels <- c(
+      reject_05 = "Bootstrap Rejection Rate",
+      reject_asymp_05 = "Asymptotic Rejection Rate",
+      reject_adj_05 = "COBA Rejection Rate"
+    )
+
+    if (input$plot_type == "power_curve") {
+      # Power curve: rejection rate vs phi
+      df$phi <- as.numeric(df$phi)
+
+      p <- ggplot(df, aes(x = phi, y = .data[[rate_col]],
+                          color = factor(innov_dist),
+                          group = factor(innov_dist))) +
+        geom_line(linewidth = 0.8) +
+        geom_point(size = 2) +
+        geom_hline(yintercept = 0.05, linetype = "dashed", color = "grey40") +
+        labs(
+          x = expression(phi),
+          y = "Rejection Rate",
+          color = "Innovation",
+          title = rate_labels[rate_col]
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(legend.position = "bottom")
+
+      # SE error bars
+      se_col <- paste0(rate_col, "_se")
+      if (se_col %in% names(df)) {
+        p <- p + geom_errorbar(
+          aes(ymin = .data[[rate_col]] - .data[[se_col]],
+              ymax = .data[[rate_col]] + .data[[se_col]]),
+          width = 0.02, alpha = 0.5
+        )
+      }
+
+      # Faceting
+      if (input$facet_by == "n") {
+        p <- p + facet_wrap(~ n, scales = "free_x",
+                            labeller = labeller(n = function(x) paste0("n = ", x)))
+      } else if (input$facet_by == "innov_dist") {
+        p <- p + facet_wrap(~ innov_dist)
+      }
+
+      p
+
+    } else if (input$plot_type == "heatmap") {
+      # Heatmap: n vs phi, fill = rejection rate
+      df$n <- factor(df$n)
+      df$phi <- factor(df$phi)
+
+      p <- ggplot(df, aes(x = phi, y = n, fill = .data[[rate_col]])) +
+        geom_tile(color = "white", linewidth = 0.5) +
+        scale_fill_gradient2(
+          low = "#2166ac", mid = "#f7f7f7", high = "#b2182b",
+          midpoint = 0.05, name = "Rejection\nRate"
+        ) +
+        geom_text(aes(label = sprintf("%.3f", .data[[rate_col]])),
+                  size = 3, color = "black") +
+        labs(
+          x = expression(phi),
+          y = "Sample Size (n)",
+          title = rate_labels[rate_col]
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(
+          panel.grid = element_blank(),
+          legend.position = "right"
+        ) +
+        facet_wrap(~ innov_dist)
+
+      p
+
+    } else if (input$plot_type == "deviation") {
+      # Deviation from nominal: dot plot of (rate - 0.05) for all 3 methods
+      # Build long-format data with one row per (config, method)
+      dev_rows <- list()
+      for (i in seq_len(nrow(df))) {
+        config_label <- sprintf("%s / n=%s / phi=%s", df$innov_dist[i], df$n[i], df$phi[i])
+        if ("reject_asymp_05" %in% names(df)) {
+          dev_rows <- c(dev_rows, list(data.frame(
+            config = config_label, method = "CO",
+            deviation = df$reject_asymp_05[i] - 0.05,
+            se = if ("reject_asymp_05_se" %in% names(df)) df$reject_asymp_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+        if ("reject_05" %in% names(df)) {
+          dev_rows <- c(dev_rows, list(data.frame(
+            config = config_label, method = "COB",
+            deviation = df$reject_05[i] - 0.05,
+            se = if ("reject_05_se" %in% names(df)) df$reject_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+        if ("reject_adj_05" %in% names(df)) {
+          dev_rows <- c(dev_rows, list(data.frame(
+            config = config_label, method = "COBA",
+            deviation = df$reject_adj_05[i] - 0.05,
+            se = if ("reject_adj_05_se" %in% names(df)) df$reject_adj_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+      }
+      dev_df <- do.call(rbind, dev_rows)
+      dev_df$method <- factor(dev_df$method, levels = c("CO", "COB", "COBA"))
+
+      p <- ggplot(dev_df, aes(x = deviation, y = config, color = method)) +
+        geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+        geom_vline(xintercept = c(-0.02, 0.02), linetype = "dotted", color = "grey70") +
+        geom_point(size = 2.5, position = position_dodge(width = 0.6)) +
+        {
+          if (!all(is.na(dev_df$se))) {
+            geom_errorbarh(
+              aes(xmin = deviation - 1.96 * se, xmax = deviation + 1.96 * se),
+              height = 0.2, position = position_dodge(width = 0.6), alpha = 0.5
+            )
+          }
+        } +
+        scale_color_manual(values = c(CO = "#e41a1c", COB = "#377eb8", COBA = "#4daf4a")) +
+        labs(
+          x = "Deviation from Nominal (Rate - 0.05)",
+          y = NULL,
+          color = "Method",
+          title = "Deviation from Nominal 5% Rate"
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(legend.position = "bottom")
+
+      p
+
+    } else if (input$plot_type == "rate_vs_n") {
+      # Rate vs sample size: line plot of rate vs n
+      df$n <- as.numeric(df$n)
+
+      p <- ggplot(df, aes(x = n, y = .data[[rate_col]],
+                          color = factor(innov_dist),
+                          group = factor(innov_dist))) +
+        geom_line(linewidth = 0.8) +
+        geom_point(size = 2) +
+        geom_hline(yintercept = 0.05, linetype = "dashed", color = "grey40") +
+        labs(
+          x = "Sample Size (n)",
+          y = "Rejection Rate",
+          color = "Innovation",
+          title = paste(rate_labels[rate_col], "vs Sample Size")
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(legend.position = "bottom")
+
+      # SE error bars
+      se_col <- paste0(rate_col, "_se")
+      if (se_col %in% names(df)) {
+        p <- p + geom_errorbar(
+          aes(ymin = .data[[rate_col]] - .data[[se_col]],
+              ymax = .data[[rate_col]] + .data[[se_col]]),
+          width = 10, alpha = 0.5
+        )
+      }
+
+      # Faceting
+      facet_choice <- input$rate_vs_n_facet
+      if (!is.null(facet_choice) && facet_choice == "innov_dist") {
+        p <- p + facet_wrap(~ innov_dist)
+      } else if (!is.null(facet_choice) && facet_choice == "phi") {
+        p <- p + facet_wrap(~ phi,
+                            labeller = labeller(phi = function(x) paste0("phi = ", x)))
+      }
+
+      p
+
+    } else if (input$plot_type == "forest") {
+      # Method comparison forest plot: 3 methods per config, horizontal
+      forest_rows <- list()
+      for (i in seq_len(nrow(df))) {
+        config_label <- sprintf("%s / n=%s / phi=%s", df$innov_dist[i], df$n[i], df$phi[i])
+        if ("reject_asymp_05" %in% names(df)) {
+          forest_rows <- c(forest_rows, list(data.frame(
+            config = config_label, method = "CO",
+            rate = df$reject_asymp_05[i],
+            se = if ("reject_asymp_05_se" %in% names(df)) df$reject_asymp_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+        if ("reject_05" %in% names(df)) {
+          forest_rows <- c(forest_rows, list(data.frame(
+            config = config_label, method = "COB",
+            rate = df$reject_05[i],
+            se = if ("reject_05_se" %in% names(df)) df$reject_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+        if ("reject_adj_05" %in% names(df)) {
+          forest_rows <- c(forest_rows, list(data.frame(
+            config = config_label, method = "COBA",
+            rate = df$reject_adj_05[i],
+            se = if ("reject_adj_05_se" %in% names(df)) df$reject_adj_05_se[i] else NA_real_,
+            stringsAsFactors = FALSE
+          )))
+        }
+      }
+      forest_df <- do.call(rbind, forest_rows)
+      forest_df$method <- factor(forest_df$method, levels = c("CO", "COB", "COBA"))
+
+      p <- ggplot(forest_df, aes(x = rate, y = config, color = method)) +
+        geom_vline(xintercept = 0.05, linetype = "dashed", color = "grey40") +
+        geom_point(size = 2.5, position = position_dodge(width = 0.6)) +
+        {
+          if (!all(is.na(forest_df$se))) {
+            geom_errorbarh(
+              aes(xmin = rate - 1.96 * se, xmax = rate + 1.96 * se),
+              height = 0.2, position = position_dodge(width = 0.6), alpha = 0.5
+            )
+          }
+        } +
+        scale_color_manual(values = c(CO = "#e41a1c", COB = "#377eb8", COBA = "#4daf4a")) +
+        labs(
+          x = "Rejection Rate",
+          y = NULL,
+          color = "Method",
+          title = "Method Comparison: Rejection Rate with 95% CI"
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(legend.position = "bottom")
+
+      p
+    }
+  })
+
+  output$main_plot <- renderPlot({
+    p <- current_plot()
+    if (is.null(p)) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+    print(p)
+  })
+
+  # PNG download
+  output$export_plot <- downloadHandler(
+    filename = function() {
+      paste0("mc_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+    },
+    content = function(file) {
+      p <- current_plot()
+      if (!is.null(p)) {
+        ggsave(file, plot = p, width = 10, height = 6, dpi = 300)
+      }
+    }
+  )
+
+  # ---------------------------------------------------------------------------
+  # Tab 5: Bootstrap Distribution
+  # ---------------------------------------------------------------------------
+
+  dist_data <- eventReactive(input$load_dist, {
+    sim_id <- input$sim_id_input
     tryCatch({
-      result <- dbGetQuery(conn, "
-        SELECT obs_stat, boot_dist, pvalue, pvalue_asymp
-        FROM runs WHERE run_id = ?
-      ", params = list(run_id))
-
+      result <- dbGetQuery(con,
+        "SELECT sim_id, obs_stat, boot_dist, pvalue, n, phi, innov_dist
+         FROM simulations WHERE sim_id = ?",
+        params = list(as.integer(sim_id)))
       if (nrow(result) == 0) return(NULL)
-
-      list(
-        run_id = run_id,
-        obs_stat = result$obs_stat[1],
-        boot_dist = result$boot_dist[[1]],
-        pvalue = result$pvalue[1],
-        pvalue_asymp = result$pvalue_asymp[1]
-      )
+      result
     }, error = function(e) NULL)
   })
 
-  output$boot_dist_hist <- renderPlot({
-    data <- selected_run_data()
-    if (is.null(data) || is.null(data$boot_dist) || length(data$boot_dist) == 0) {
+  output$dist_plot <- renderPlot({
+    d <- dist_data()
+    if (is.null(d)) {
       plot.new()
-      text(0.5, 0.5, "No bootstrap distribution stored", cex = 1.2)
+      text(0.5, 0.5, "Enter a sim_id and click Load", cex = 1.2, col = "grey50")
       return()
     }
 
-    hist(data$boot_dist, breaks = 30, col = "steelblue", border = "white",
-         main = "Bootstrap Distribution", xlab = "Test Statistic",
-         freq = FALSE)
-    abline(v = data$obs_stat, col = "red", lwd = 2, lty = 2)
-    abline(v = -data$obs_stat, col = "red", lwd = 2, lty = 2)
-    legend("topright", legend = c(sprintf("Observed: %.3f", data$obs_stat)),
-           col = "red", lty = 2, lwd = 2, bty = "n")
+    boot_dist <- d$boot_dist[[1]]
+    obs_stat <- d$obs_stat[1]
+    pval <- d$pvalue[1]
+
+    hist_data <- data.frame(t_stat = boot_dist)
+
+    p <- ggplot(hist_data, aes(x = t_stat)) +
+      geom_histogram(bins = 40, fill = "#4292c6", color = "white", alpha = 0.8) +
+      geom_vline(xintercept = obs_stat, color = "red", linewidth = 1.2, linetype = "solid") +
+      annotate("text", x = obs_stat, y = Inf, vjust = 2, hjust = -0.1,
+               label = sprintf("T_obs = %.3f\np = %.4f", obs_stat, pval),
+               color = "red", size = 4, fontface = "bold") +
+      labs(
+        x = "Bootstrap t-statistic",
+        y = "Count",
+        title = sprintf("Bootstrap Distribution (sim_id = %d, n=%d, phi=%.2f, %s)",
+                        d$sim_id[1], d$n[1], d$phi[1], d$innov_dist[1])
+      ) +
+      theme_minimal(base_size = 14)
+
+    print(p)
   })
 
-  output$boot_dist_ecdf <- renderPlot({
-    data <- selected_run_data()
-    if (is.null(data) || is.null(data$boot_dist) || length(data$boot_dist) == 0) {
-      plot.new()
-      text(0.5, 0.5, "No bootstrap distribution stored", cex = 1.2)
-      return()
-    }
+  output$dist_summary <- renderPrint({
+    d <- dist_data()
+    if (is.null(d)) return(cat("No simulation loaded"))
 
-    plot(ecdf(data$boot_dist), main = "Empirical CDF",
-         xlab = "Test Statistic", ylab = "F(x)")
-    abline(v = data$obs_stat, col = "red", lwd = 2, lty = 2)
-    abline(v = -data$obs_stat, col = "red", lwd = 2, lty = 2)
-  })
+    boot_dist <- d$boot_dist[[1]]
+    cat(sprintf("Simulation ID: %d\n", d$sim_id[1]))
+    cat(sprintf("Config: n=%d, phi=%.2f, innov_dist=%s\n", d$n[1], d$phi[1], d$innov_dist[1]))
+    cat(sprintf("Observed t-stat: %.4f\n", d$obs_stat[1]))
+    cat(sprintf("Bootstrap replicates: %d\n", length(boot_dist)))
+    cat(sprintf("Bootstrap mean: %.4f, sd: %.4f\n", mean(boot_dist), sd(boot_dist)))
+    cat(sprintf("P-value (stored): %.4f\n", d$pvalue[1]))
 
-  output$run_details <- renderPrint({
-    data <- selected_run_data()
-    if (is.null(data)) return(cat("Select a run to view details"))
-
-    cat("Run ID:", data$run_id, "\n")
-    cat("Observed Statistic:", round(data$obs_stat, 4), "\n")
-    cat("Bootstrap P-value:", round(data$pvalue, 4), "\n")
-    cat("Asymptotic P-value:", round(data$pvalue_asymp, 4), "\n")
-    if (!is.null(data$boot_dist)) {
-      cat("Bootstrap Replicates:", length(data$boot_dist), "\n")
-      cat("Boot Dist Summary: min=", round(min(data$boot_dist), 3),
-          ", median=", round(median(data$boot_dist), 3),
-          ", max=", round(max(data$boot_dist), 3), "\n")
-    }
+    # Recalculate
+    nb <- length(boot_dist)
+    recalc_p <- (sum(abs(boot_dist) >= abs(d$obs_stat[1])) + 1) / (nb + 1)
+    cat(sprintf("P-value (recalculated): %.4f\n", recalc_p))
   })
 
   # ---------------------------------------------------------------------------
-  # Visualization Plots
+  # Tab 4: P-value Diagnostics
   # ---------------------------------------------------------------------------
 
-  # Plot 1: Rejection Rate vs Sample Size
-  output$plot_reject_by_n <- renderPlot({
-    data <- rejection_rates_data()
-    if (nrow(data) == 0) {
-      plot.new()
-      text(0.5, 0.5, "No data available", cex = 1.2)
-      return()
+  # Filtered p-value data (independent of sidebar)
+  pval_data <- reactive({
+    sql <- "SELECT pvalue, pvalue_asymp, pvalue_adj, n, phi, innov_dist FROM simulations WHERE 1=1"
+    params <- list()
+
+    if (length(input$pval_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$pval_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$pval_n_filter)))
+    }
+    if (length(input$pval_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$pval_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$pval_phi_filter)))
+    }
+    if (length(input$pval_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$pval_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$pval_innov_filter))
     }
 
-    # Extract phi values from ar_phi column
-    data$phi <- sapply(data$ar_phi, function(x) {
-      if (is.null(x) || length(x) == 0) return(NA)
-      x[1]  # First AR coefficient
-    })
-
-    # Filter to rows with valid n and phi
-    data <- data[!is.na(data$n) & !is.na(data$phi), ]
-    if (nrow(data) == 0) {
-      plot.new()
-      text(0.5, 0.5, "No AR(1) data available", cex = 1.2)
-      return()
-    }
-
-    # Get unique phi values for colors
-    phi_vals <- sort(unique(data$phi))
-    colors <- rainbow(length(phi_vals), s = 0.7, v = 0.8)
-    names(colors) <- as.character(phi_vals)
-
-    # Set up plot
-    op <- par(mar = c(4, 4, 3, 8), xpd = TRUE)
-    on.exit(par(op))
-
-    ylim_max <- max(c(data$reject_cob_05, 0.15), na.rm = TRUE)
-    plot(NULL, xlim = range(data$n), ylim = c(0, ylim_max),
-         xlab = "Sample Size (n)", ylab = "Rejection Rate",
-         main = "COB Rejection Rate vs Sample Size")
-
-    # Horizontal line at nominal level
-    abline(h = 0.05, col = "gray50", lty = 2, lwd = 1.5)
-
-    # Plot lines for each phi
-    for (phi in phi_vals) {
-      sub <- data[data$phi == phi, ]
-      sub <- sub[order(sub$n), ]
-      if (nrow(sub) > 1) {
-        lines(sub$n, sub$reject_cob_05, col = colors[as.character(phi)], lwd = 2)
-        points(sub$n, sub$reject_cob_05, col = colors[as.character(phi)], pch = 19)
-      } else if (nrow(sub) == 1) {
-        points(sub$n, sub$reject_cob_05, col = colors[as.character(phi)], pch = 19, cex = 1.5)
-      }
-    }
-
-    # Legend
-    legend("topright", inset = c(-0.25, 0),
-           legend = paste0("phi=", phi_vals),
-           col = colors, lwd = 2, pch = 19, bty = "n", cex = 0.9)
+    tryCatch(
+      dbGetQuery(con, sql, params = params),
+      error = function(e) data.frame()
+    )
   })
 
-  # Plot 2: Method Comparison Bar Chart
-  output$plot_method_compare <- renderPlot({
-    data <- rejection_rates_data()
-    if (nrow(data) == 0) {
-      plot.new()
-      text(0.5, 0.5, "No data available", cex = 1.2)
-      return()
-    }
-
-    # Reshape data for grouped bar chart
-    # Aggregate by DGP name (combining across sample sizes if needed)
-    dgp_names <- unique(data$dgp_name)
-    if (length(dgp_names) > 10) dgp_names <- dgp_names[1:10]  # Limit for readability
-
-    # Prepare matrix for barplot
-    methods <- c("CO", "COB", "COBA")
-    mat <- matrix(NA, nrow = 3, ncol = length(dgp_names),
-                  dimnames = list(methods, dgp_names))
-
-    for (i in seq_along(dgp_names)) {
-      sub <- data[data$dgp_name == dgp_names[i], ]
-      if (nrow(sub) > 0) {
-        mat["CO", i] <- mean(sub$reject_co_05, na.rm = TRUE)
-        mat["COB", i] <- mean(sub$reject_cob_05, na.rm = TRUE)
-        mat["COBA", i] <- mean(sub$reject_coba_05, na.rm = TRUE)
-      }
-    }
-
-    # Shorten DGP names for display
-    short_names <- gsub("AR\\(1\\) phi=", "phi=", dgp_names)
-    short_names <- gsub(" \\+ ARCH\\(8\\)", "+ARCH", short_names)
-    short_names <- gsub(" \\+ Hetero", "+Het", short_names)
-    short_names <- gsub(" n=", " n", short_names)
-    colnames(mat) <- short_names
-
-    op <- par(mar = c(7, 4, 3, 1))
-    on.exit(par(op))
-
-    barplot(mat, beside = TRUE, col = c("#e74c3c", "#3498db", "#2ecc71"),
-            las = 2, ylab = "Rejection Rate",
-            main = "Method Comparison by DGP",
-            ylim = c(0, max(mat, na.rm = TRUE) * 1.2))
-    abline(h = 0.05, col = "gray50", lty = 2, lwd = 1.5)
-    legend("topright", legend = methods, fill = c("#e74c3c", "#3498db", "#2ecc71"),
-           bty = "n", cex = 0.9)
+  output$pval_status <- renderText({
+    df <- pval_data()
+    if (nrow(df) == 0) return("No data")
+    n_configs <- nrow(unique(df[, c("n", "phi", "innov_dist"), drop = FALSE]))
+    paste0(format(nrow(df), big.mark = ","), " sims, ", n_configs, " configs")
   })
 
-  # Plot 3: Study Comparison (for multi-study selection)
-  output$plot_study_compare <- renderPlot({
-    data <- rejection_rates_data()
-    study_ids <- input$study_select
-
-    if (nrow(data) == 0) {
+  # P-value histogram: side-by-side for 3 methods
+  output$pval_hist <- renderPlot({
+    df <- pval_data()
+    if (nrow(df) == 0) {
       plot.new()
-      text(0.5, 0.5, "No data available", cex = 1.2)
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
       return()
     }
 
-    if (length(study_ids) < 2) {
+    # Build long-format: one row per (sim, method)
+    long_rows <- list()
+    if ("pvalue" %in% names(df) && !all(is.na(df$pvalue))) {
+      long_rows <- c(long_rows, list(data.frame(
+        pval = df$pvalue[!is.na(df$pvalue)], method = "COB (Bootstrap)",
+        stringsAsFactors = FALSE
+      )))
+    }
+    if ("pvalue_asymp" %in% names(df) && !all(is.na(df$pvalue_asymp))) {
+      long_rows <- c(long_rows, list(data.frame(
+        pval = df$pvalue_asymp[!is.na(df$pvalue_asymp)], method = "CO (Asymptotic)",
+        stringsAsFactors = FALSE
+      )))
+    }
+    if ("pvalue_adj" %in% names(df) && !all(is.na(df$pvalue_adj))) {
+      long_rows <- c(long_rows, list(data.frame(
+        pval = df$pvalue_adj[!is.na(df$pvalue_adj)], method = "COBA (Adjusted)",
+        stringsAsFactors = FALSE
+      )))
+    }
+
+    if (length(long_rows) == 0) {
       plot.new()
-      text(0.5, 0.5, "Select 2+ studies above to compare", cex = 1.2)
+      text(0.5, 0.5, "No p-value data available", cex = 1.2, col = "grey50")
       return()
     }
 
-    # Get unique studies and DGPs
-    study_names <- unique(data$study_name)
-    dgp_names <- unique(data$dgp_name)
+    pval_long <- do.call(rbind, long_rows)
 
-    # Limit DGPs for readability
-    if (length(dgp_names) > 6) dgp_names <- dgp_names[1:6]
+    p <- ggplot(pval_long, aes(x = pval)) +
+      geom_histogram(bins = 20, fill = "#4292c6", color = "white", alpha = 0.8,
+                     boundary = 0) +
+      facet_wrap(~ method, scales = "free_y") +
+      labs(x = "P-value", y = "Count",
+           title = "P-value Distributions (uniform = well-calibrated)") +
+      theme_minimal(base_size = 13) +
+      theme(strip.text = element_text(face = "bold"))
 
-    # Prepare matrix: rows = studies, cols = DGPs
-    mat <- matrix(NA, nrow = length(study_names), ncol = length(dgp_names),
-                  dimnames = list(study_names, dgp_names))
+    # Add uniform reference line (expected count per bin)
+    n_per_method <- table(pval_long$method)
+    ref_df <- data.frame(
+      method = names(n_per_method),
+      yint = as.numeric(n_per_method) / 20,
+      stringsAsFactors = FALSE
+    )
+    p <- p + geom_hline(data = ref_df, aes(yintercept = yint),
+                        color = "red", linetype = "dashed", linewidth = 0.6)
 
-    for (i in seq_along(study_names)) {
-      for (j in seq_along(dgp_names)) {
-        sub <- data[data$study_name == study_names[i] & data$dgp_name == dgp_names[j], ]
-        if (nrow(sub) > 0) {
-          mat[i, j] <- mean(sub$reject_cob_05, na.rm = TRUE)
+    print(p)
+  })
+
+  # P-value QQ plot against U(0,1)
+  output$pval_qq <- renderPlot({
+    df <- pval_data()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    # Build long-format for QQ
+    qq_rows <- list()
+    methods <- c(pvalue = "COB (Bootstrap)", pvalue_asymp = "CO (Asymptotic)",
+                 pvalue_adj = "COBA (Adjusted)")
+
+    for (col in names(methods)) {
+      if (col %in% names(df)) {
+        vals <- df[[col]][!is.na(df[[col]])]
+        if (length(vals) > 0) {
+          n_vals <- length(vals)
+          theoretical <- (seq_len(n_vals) - 0.5) / n_vals
+          qq_rows <- c(qq_rows, list(data.frame(
+            theoretical = theoretical,
+            observed = sort(vals),
+            method = methods[col],
+            stringsAsFactors = FALSE
+          )))
         }
       }
     }
 
-    # Shorten names for display
-    short_dgp <- gsub("AR\\(1\\) phi=", "phi=", dgp_names)
-    short_dgp <- gsub(" \\+ ARCH\\(8\\)", "+ARCH", short_dgp)
-    short_dgp <- gsub(" \\+ Hetero", "+Het", short_dgp)
-    short_dgp <- gsub(" n=", " n", short_dgp)
-    colnames(mat) <- short_dgp
+    if (length(qq_rows) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No p-value data available", cex = 1.2, col = "grey50")
+      return()
+    }
 
-    short_study <- gsub("Scenario [0-9]+: ", "", study_names)
-    rownames(mat) <- short_study
+    qq_df <- do.call(rbind, qq_rows)
 
-    op <- par(mar = c(7, 4, 3, 8), xpd = TRUE)
-    on.exit(par(op))
+    p <- ggplot(qq_df, aes(x = theoretical, y = observed)) +
+      geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+      geom_point(size = 0.8, alpha = 0.5, color = "#2171b5") +
+      facet_wrap(~ method) +
+      labs(x = "Theoretical Quantiles (Uniform)",
+           y = "Observed P-value Quantiles",
+           title = "QQ Plot: P-values vs Uniform(0, 1)") +
+      coord_equal() +
+      theme_minimal(base_size = 13) +
+      theme(strip.text = element_text(face = "bold"))
 
-    # Use different colors for each study
-    colors <- rainbow(length(study_names), s = 0.7, v = 0.8)
-
-    barplot(mat, beside = TRUE, col = colors,
-            las = 2, ylab = "COB Rejection Rate",
-            main = "Cross-Study Comparison",
-            ylim = c(0, max(mat, na.rm = TRUE) * 1.2))
-    abline(h = 0.05, col = "gray50", lty = 2, lwd = 1.5)
-    legend("topright", inset = c(-0.15, 0),
-           legend = rownames(mat), fill = colors,
-           bty = "n", cex = 0.8, title = "Study")
+    print(p)
   })
 
-  # Plot 4: P-value Histogram (now Plot 4 after adding study comparison)
-  output$plot_pvalue_hist <- renderPlot({
-    data <- runs_data()
-    if (nrow(data) == 0 || !"pvalue" %in% names(data)) {
+  # P-value scatter: bootstrap vs asymptotic, bootstrap vs COBA
+  output$pval_scatter <- renderPlot({
+    df <- pval_data()
+    if (nrow(df) == 0) {
       plot.new()
-      text(0.5, 0.5, "No p-values available", cex = 1.2)
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
       return()
     }
 
-    pvals <- data$pvalue[!is.na(data$pvalue)]
-    if (length(pvals) == 0) {
+    has_asymp <- "pvalue_asymp" %in% names(df) && !all(is.na(df$pvalue_asymp))
+    has_adj <- "pvalue_adj" %in% names(df) && !all(is.na(df$pvalue_adj))
+    has_boot <- "pvalue" %in% names(df) && !all(is.na(df$pvalue))
+
+    if (!has_boot || (!has_asymp && !has_adj)) {
       plot.new()
-      text(0.5, 0.5, "No p-values available", cex = 1.2)
+      text(0.5, 0.5, "Need at least 2 methods with p-values", cex = 1.2, col = "grey50")
       return()
     }
 
-    hist(pvals, breaks = 20, col = "steelblue", border = "white",
-         main = "Bootstrap P-value Distribution",
-         xlab = "P-value", freq = FALSE, xlim = c(0, 1))
-    abline(h = 1, col = "red", lty = 2, lwd = 2)  # Uniform reference
-    legend("topright", legend = "Uniform(0,1)", col = "red", lty = 2, lwd = 2, bty = "n")
-  })
-
-  # Plot 4: P-value QQ Plot
-  output$plot_pvalue_qq <- renderPlot({
-    data <- runs_data()
-    if (nrow(data) == 0 || !"pvalue" %in% names(data)) {
-      plot.new()
-      text(0.5, 0.5, "No p-values available", cex = 1.2)
-      return()
+    scatter_rows <- list()
+    if (has_asymp) {
+      idx <- !is.na(df$pvalue) & !is.na(df$pvalue_asymp)
+      scatter_rows <- c(scatter_rows, list(data.frame(
+        boot_pval = df$pvalue[idx],
+        other_pval = df$pvalue_asymp[idx],
+        comparison = "COB vs CO (Asymptotic)",
+        stringsAsFactors = FALSE
+      )))
+    }
+    if (has_adj) {
+      idx <- !is.na(df$pvalue) & !is.na(df$pvalue_adj)
+      scatter_rows <- c(scatter_rows, list(data.frame(
+        boot_pval = df$pvalue[idx],
+        other_pval = df$pvalue_adj[idx],
+        comparison = "COB vs COBA (Adjusted)",
+        stringsAsFactors = FALSE
+      )))
     }
 
-    pvals <- data$pvalue[!is.na(data$pvalue)]
-    if (length(pvals) < 2) {
-      plot.new()
-      text(0.5, 0.5, "Need at least 2 p-values for QQ plot", cex = 1.2)
-      return()
-    }
+    scatter_df <- do.call(rbind, scatter_rows)
 
-    # QQ plot against Uniform(0,1)
-    n <- length(pvals)
-    theoretical <- (1:n - 0.5) / n
-    observed <- sort(pvals)
+    p <- ggplot(scatter_df, aes(x = boot_pval, y = other_pval)) +
+      geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+      geom_point(size = 0.6, alpha = 0.2, color = "#2171b5") +
+      facet_wrap(~ comparison) +
+      labs(x = "Bootstrap P-value (COB)",
+           y = "Comparison Method P-value",
+           title = "P-value Agreement Between Methods") +
+      coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+      theme_minimal(base_size = 13) +
+      theme(strip.text = element_text(face = "bold"))
 
-    plot(theoretical, observed, pch = 19, col = "steelblue",
-         xlab = "Theoretical Quantiles (Uniform)",
-         ylab = "Observed P-values",
-         main = "P-value QQ Plot",
-         xlim = c(0, 1), ylim = c(0, 1))
-    abline(0, 1, col = "red", lwd = 2, lty = 2)
-    legend("bottomright", legend = "y = x", col = "red", lty = 2, lwd = 2, bty = "n")
+    print(p)
   })
 
   # ---------------------------------------------------------------------------
-  # Cross-Study Comparison
+  # Tab 6: Analysis Grids
   # ---------------------------------------------------------------------------
 
-  comparison_data <- reactive({
-    conn <- con()
-    phi <- input$compare_phi
-    n <- input$compare_n
-
-    if (is.null(conn)) return(data.frame())
-
-    # Query rejection rates grouped by error_type for fixed phi and n
-    tryCatch({
-      dbGetQuery(conn, "
-        SELECT error_type,
-               ROUND(reject_co_05, 4) AS CO,
-               ROUND(reject_cob_05, 4) AS COB,
-               ROUND(reject_coba_05, 4) AS COBA,
-               n_runs
-        FROM v_rejection_rates
-        WHERE phi_value = ? AND n = ?
-        ORDER BY error_type
-      ", params = list(as.numeric(phi), as.integer(n)))
-    }, error = function(e) data.frame())
+  # Grid 1: By Sample Size (fix innov_dist + phi, vary n)
+  grid1_data <- reactive({
+    req(input$grid1_innov, input$grid1_phi)
+    grid_query(innov_dist = input$grid1_innov,
+               phi = input$grid1_phi,
+               order_col = "n")
   })
 
-  output$comparison_table <- renderDT({
-    data <- comparison_data()
-    if (nrow(data) == 0) {
-      return(datatable(data.frame(Message = "No data available. Run migration first.")))
+  output$grid1_table <- renderDT({
+    format_grid_dt(grid1_data(), row_label_col = "n", row_label_name = "n")
+  })
+
+  # Grid 2: By Phi (fix innov_dist + n, vary phi)
+  grid2_data <- reactive({
+    req(input$grid2_innov, input$grid2_n)
+    grid_query(innov_dist = input$grid2_innov,
+               n = input$grid2_n,
+               order_col = "phi")
+  })
+
+  output$grid2_table <- renderDT({
+    format_grid_dt(grid2_data(), row_label_col = "phi", row_label_name = "Phi")
+  })
+
+  # Grid 3: By Distribution (fix phi + n, vary innov_dist)
+  grid3_data <- reactive({
+    req(input$grid3_phi, input$grid3_n)
+    grid_query(phi = input$grid3_phi,
+               n = input$grid3_n,
+               order_col = "innov_dist")
+  })
+
+  output$grid3_table <- renderDT({
+    format_grid_dt(grid3_data(), row_label_col = "innov_dist",
+                   row_label_name = "Distribution")
+  })
+
+  # ---------------------------------------------------------------------------
+  # Tab 7: Parallel Coordinates
+  # ---------------------------------------------------------------------------
+
+  # Filtered data for PC plots (independent of sidebar)
+  pc_data <- reactive({
+    sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
+    params <- list()
+
+    if (length(input$pc_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$pc_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$pc_n_filter)))
+    }
+    if (length(input$pc_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$pc_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$pc_phi_filter)))
+    }
+    if (length(input$pc_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$pc_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$pc_innov_filter))
     }
 
-    datatable(data,
-              options = list(dom = 't', pageLength = 10),
-              rownames = FALSE) |>
-      formatStyle('COB',
-                  backgroundColor = styleInterval(c(0.04, 0.06),
-                                                  c('#d4edda', '#fff3cd', '#f8d7da')))
-  })
-
-  output$comparison_plot <- renderPlot({
-    data <- comparison_data()
-    if (nrow(data) == 0 || !all(c("CO", "COB", "COBA") %in% names(data))) {
-      plot.new()
-      text(0.5, 0.5, "No data available.\nRun boot_db_migrate_error_type() first.", cex = 1.2)
-      return()
-    }
-
-    mat <- as.matrix(data[, c("CO", "COB", "COBA")])
-    rownames(mat) <- data$error_type
-
-    op <- par(mar = c(7, 4, 3, 2))
-    on.exit(par(op))
-
-    barplot(t(mat), beside = TRUE, col = c("#e74c3c", "#3498db", "#2ecc71"),
-            las = 2, ylab = "Rejection Rate",
-            main = sprintf("phi = %s, n = %s", input$compare_phi, input$compare_n),
-            ylim = c(0, max(mat, na.rm = TRUE) * 1.3))
-    abline(h = 0.05, lty = 2, col = "gray50", lwd = 2)
-    legend("topright", legend = c("CO", "COB", "COBA"),
-           fill = c("#e74c3c", "#3498db", "#2ecc71"), bty = "n")
-  })
-
-  # ---------------------------------------------------------------------------
-  # Custom SQL Query
-  # ---------------------------------------------------------------------------
-
-  custom_query_result <- eventReactive(input$run_query, {
-    conn <- con()
-    sql <- input$custom_sql
-    if (is.null(conn) || is.null(sql) || sql == "") return(data.frame())
-
+    sql <- paste0(sql, " ORDER BY innov_dist, n, phi")
     tryCatch(
-      dbGetQuery(conn, sql),
-      error = function(e) {
-        data.frame(Error = conditionMessage(e))
-      }
+      dbGetQuery(con, sql, params = params),
+      error = function(e) data.frame()
     )
   })
 
-  output$custom_query_result <- renderDT({
-    data <- custom_query_result()
-    datatable(data, options = list(pageLength = 20, scrollX = TRUE), rownames = FALSE)
+  # Helper: build a parallel coordinates ggplot
+  # cols = named list of column_name -> axis_label
+  # color_col = column to use for color
+  # color_label = legend title
+  build_parcoord <- function(df, cols, color_col, color_label, title = "") {
+    if (nrow(df) == 0) return(NULL)
+
+    col_names <- names(cols)
+    axis_labels <- unname(cols)
+    n_axes <- length(col_names)
+
+    # Assign config ID to each row
+    df$config_id <- seq_len(nrow(df))
+
+    # Scale each column to [0, 1] and store original range
+    ranges <- list()
+    scaled <- data.frame(config_id = df$config_id)
+
+    for (col in col_names) {
+      vals <- as.numeric(df[[col]])
+      rng <- range(vals, na.rm = TRUE)
+      ranges[[col]] <- rng
+      if (rng[1] == rng[2]) {
+        scaled[[col]] <- 0.5
+      } else {
+        scaled[[col]] <- (vals - rng[1]) / (rng[2] - rng[1])
+      }
+    }
+
+    # Build long-format data for geom_line
+    long_rows <- vector("list", nrow(df) * n_axes)
+    idx <- 1
+    for (i in seq_len(nrow(df))) {
+      for (j in seq_len(n_axes)) {
+        long_rows[[idx]] <- data.frame(
+          config_id = i,
+          axis_num = j,
+          axis_label = axis_labels[j],
+          value = scaled[[col_names[j]]][i],
+          color_var = as.character(df[[color_col]][i]),
+          stringsAsFactors = FALSE
+        )
+        idx <- idx + 1
+      }
+    }
+    long_df <- do.call(rbind, long_rows)
+    long_df$axis_num <- as.integer(long_df$axis_num)
+
+    # Build annotation data for axis tick labels (min/max at each axis)
+    tick_labels <- unlist(lapply(col_names, function(col) {
+      rng <- ranges[[col]]
+      c(format(rng[1], digits = 3), format(rng[2], digits = 3))
+    }))
+    tick_df <- data.frame(
+      axis_num = rep(seq_len(n_axes), each = 2),
+      y = rep(c(0, 1), times = n_axes),
+      label = tick_labels,
+      stringsAsFactors = FALSE
+    )
+
+    p <- ggplot(long_df, aes(x = axis_num, y = value,
+                              group = config_id, color = color_var)) +
+      geom_line(alpha = 0.6, linewidth = 0.7) +
+      geom_point(size = 1.5, alpha = 0.7) +
+      # Reference line at nominal 0.05 for rate axes
+      scale_x_continuous(breaks = seq_len(n_axes), labels = axis_labels,
+                         limits = c(0.5, n_axes + 0.5)) +
+      scale_y_continuous(limits = c(-0.08, 1.08), breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+      # Axis tick labels showing original values
+      geom_text(data = tick_df,
+                aes(x = axis_num, y = y, label = label),
+                inherit.aes = FALSE, size = 2.8, color = "grey40",
+                hjust = 1.2, fontface = "italic") +
+      # Vertical axis lines
+      geom_vline(xintercept = seq_len(n_axes), color = "grey80", linewidth = 0.3) +
+      labs(x = NULL, y = "Scaled Value [0, 1]", color = color_label, title = title) +
+      theme_minimal(base_size = 13) +
+      theme(
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "bottom"
+      )
+
+    p
+  }
+
+  # Plot 1: Full Profile (n -> phi -> CO -> COB -> COBA, color by innov_dist)
+  output$pc_full_plot <- renderPlot({
+    df <- pc_data()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    p <- build_parcoord(
+      df,
+      cols = c(n = "n", phi = "phi",
+               reject_asymp_05 = "CO Rate",
+               reject_05 = "COB Rate",
+               reject_adj_05 = "COBA Rate"),
+      color_col = "innov_dist",
+      color_label = "Innovation",
+      title = "Full Profile: n \u2192 phi \u2192 CO \u2192 COB \u2192 COBA"
+    )
+
+    if (!is.null(p)) print(p)
+  })
+
+  # Plot 2: Method Comparison (CO -> COB -> COBA, color by user selection)
+  output$pc_method_plot <- renderPlot({
+    df <- pc_data()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    color_col <- input$pc_color_by
+    color_labels <- c(innov_dist = "Innovation", n = "Sample Size", phi = "Phi")
+    # Ensure color column is character for consistent legend
+    df[[color_col]] <- as.character(df[[color_col]])
+
+    p <- build_parcoord(
+      df,
+      cols = c(reject_asymp_05 = "CO Rate",
+               reject_05 = "COB Rate",
+               reject_adj_05 = "COBA Rate"),
+      color_col = color_col,
+      color_label = color_labels[color_col],
+      title = "Method Comparison: CO \u2192 COB \u2192 COBA"
+    )
+
+    if (!is.null(p)) print(p)
+  })
+
+  # Plot 3: Single-Method Sensitivity (n -> phi -> rate, color by innov_dist)
+  output$pc_sensitivity_plot <- renderPlot({
+    df <- pc_data()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    rate_col <- input$pc_method
+    rate_labels <- c(reject_05 = "COB Rate",
+                     reject_asymp_05 = "CO Rate",
+                     reject_adj_05 = "COBA Rate")
+
+    cols <- c("n", "phi", rate_col)
+    names(cols) <- NULL
+    named_cols <- setNames(cols, cols)
+    named_cols <- c(n = "n", phi = "phi")
+    named_cols[[rate_col]] <- rate_labels[rate_col]
+
+    p <- build_parcoord(
+      df,
+      cols = named_cols,
+      color_col = "innov_dist",
+      color_label = "Innovation",
+      title = paste0("Sensitivity: n \u2192 phi \u2192 ", rate_labels[rate_col])
+    )
+
+    if (!is.null(p)) print(p)
   })
 
   # ---------------------------------------------------------------------------
-  # Export
+  # Tab 8: Diagnostics
   # ---------------------------------------------------------------------------
 
-  output$export_csv <- downloadHandler(
-    filename = function() {
-      paste0("simulation_results_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
-    },
-    content = function(file) {
-      data <- runs_data()
-      write.csv(data, file, row.names = FALSE)
+  # Filtered diagnostics data (independent of sidebar)
+  diag_data <- reactive({
+    sql <- paste0(
+      "SELECT null_ar_order, null_ar_phi[1] AS null_phi1, n, phi, innov_dist ",
+      "FROM simulations WHERE null_ar_order IS NOT NULL"
+    )
+    params <- list()
+
+    if (length(input$diag_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$diag_n_filter)))
     }
-  )
+    if (length(input$diag_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$diag_phi_filter)))
+    }
+    if (length(input$diag_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$diag_innov_filter))
+    }
+
+    tryCatch(
+      dbGetQuery(con, sql, params = params),
+      error = function(e) data.frame()
+    )
+  })
+
+  # Status text
+  output$diag_status <- renderText({
+    df <- diag_data()
+    if (nrow(df) == 0) return("No data")
+    n_configs <- nrow(unique(df[, c("n", "phi", "innov_dist"), drop = FALSE]))
+    paste0(format(nrow(df), big.mark = ","), " sims, ", n_configs, " configs")
+  })
+
+  # AR order distribution bar chart
+  output$diag_ar_order_plot <- renderPlot({
+    df <- diag_data()
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    df$null_ar_order <- factor(df$null_ar_order)
+
+    # Build config label for faceting
+    df$config <- sprintf("n=%s, phi=%s, %s", df$n, df$phi, df$innov_dist)
+
+    # If many configs, facet; otherwise single plot
+    n_configs <- length(unique(df$config))
+
+    p <- ggplot(df, aes(x = null_ar_order)) +
+      geom_bar(fill = "#4292c6", color = "white", alpha = 0.8) +
+      labs(
+        x = "Fitted AR Order",
+        y = "Count",
+        title = "Distribution of Fitted AR Orders Under the Null"
+      ) +
+      theme_minimal(base_size = 14)
+
+    if (n_configs > 1 && n_configs <= 12) {
+      p <- p + facet_wrap(~ config, scales = "free_y")
+    } else if (n_configs > 12) {
+      p <- p + facet_wrap(~ config, scales = "free_y", ncol = 4)
+    }
+
+    print(p)
+  })
+
+  # Estimated phi distribution
+  output$diag_phi_plot <- renderPlot({
+    df <- diag_data()
+    if (nrow(df) == 0 || all(is.na(df$null_phi1))) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    df <- df[!is.na(df$null_phi1), ]
+    df$true_phi_label <- paste0("True phi = ", df$phi)
+
+    p <- ggplot(df, aes(x = null_phi1)) +
+      geom_histogram(bins = 50, fill = "#4292c6", color = "white", alpha = 0.8) +
+      geom_vline(aes(xintercept = phi), color = "red", linewidth = 1, linetype = "dashed") +
+      labs(
+        x = "Estimated First AR Coefficient",
+        y = "Count",
+        title = "Distribution of Estimated Null AR(1) Coefficient"
+      ) +
+      theme_minimal(base_size = 14)
+
+    n_configs <- length(unique(df$true_phi_label))
+    if (n_configs > 1) {
+      p <- p + facet_wrap(~ true_phi_label, scales = "free")
+    }
+
+    print(p)
+  })
+
+  # MC Convergence: running rejection rate as sims accumulate
+  output$diag_convergence_plot <- renderPlot({
+    pval_col <- input$diag_conv_method
+    method_labels <- c(pvalue = "Bootstrap (COB)",
+                       pvalue_asymp = "Asymptotic (CO)",
+                       pvalue_adj = "COBA")
+
+    # Query raw sims ordered by sim_id, with diag filters
+    sql <- paste0("SELECT sim_id, ", pval_col, " AS pval, n, phi, innov_dist ",
+                  "FROM simulations WHERE ", pval_col, " IS NOT NULL")
+    params <- list()
+
+    if (length(input$diag_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$diag_n_filter)))
+    }
+    if (length(input$diag_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$diag_phi_filter)))
+    }
+    if (length(input$diag_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$diag_innov_filter))
+    }
+
+    sql <- paste0(sql, " ORDER BY n, phi, innov_dist, sim_id")
+    df <- tryCatch(dbGetQuery(con, sql, params = params), error = function(e) data.frame())
+
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    # Compute running rejection rate per config
+    df$config <- sprintf("%s / n=%s / phi=%s", df$innov_dist, df$n, df$phi)
+    configs <- unique(df$config)
+
+    conv_rows <- list()
+    for (cfg in configs) {
+      sub <- df[df$config == cfg, ]
+      rejected <- sub$pval < 0.05
+      cum_rate <- cumsum(rejected) / seq_along(rejected)
+      conv_rows <- c(conv_rows, list(data.frame(
+        sim_num = seq_along(cum_rate),
+        cum_reject_rate = cum_rate,
+        config = cfg,
+        stringsAsFactors = FALSE
+      )))
+    }
+    conv_df <- do.call(rbind, conv_rows)
+
+    p <- ggplot(conv_df, aes(x = sim_num, y = cum_reject_rate, color = config)) +
+      geom_line(alpha = 0.7, linewidth = 0.6) +
+      geom_hline(yintercept = 0.05, linetype = "dashed", color = "grey40") +
+      labs(
+        x = "Simulation Number",
+        y = "Cumulative Rejection Rate",
+        color = "Configuration",
+        title = paste0("MC Convergence: ", method_labels[pval_col])
+      ) +
+      theme_minimal(base_size = 13) +
+      theme(legend.position = "bottom",
+            legend.text = element_text(size = 8))
+
+    print(p)
+  })
+
+  # Batch consistency: boxplot of per-batch rejection rates
+  output$diag_batch_plot <- renderPlot({
+    rate_col <- input$diag_batch_method
+    rate_labels <- c(reject_05 = "Bootstrap (COB)",
+                     reject_asymp_05 = "Asymptotic (CO)",
+                     reject_adj_05 = "COBA")
+
+    # Query per-batch view with diag filters
+    sql <- "SELECT * FROM v_rejection_rates_by_batch WHERE 1=1"
+    params <- list()
+
+    if (length(input$diag_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$diag_n_filter)))
+    }
+    if (length(input$diag_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$diag_phi_filter)))
+    }
+    if (length(input$diag_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$diag_innov_filter))
+    }
+
+    sql <- paste0(sql, " ORDER BY innov_dist, n, phi")
+    df <- tryCatch(dbGetQuery(con, sql, params = params), error = function(e) data.frame())
+
+    if (nrow(df) == 0 || !rate_col %in% names(df)) {
+      plot.new()
+      text(0.5, 0.5, "No per-batch data available", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    df$config <- sprintf("%s / n=%s / phi=%s", df$innov_dist, df$n, df$phi)
+
+    p <- ggplot(df, aes(x = config, y = .data[[rate_col]])) +
+      geom_hline(yintercept = 0.05, linetype = "dashed", color = "grey40") +
+      geom_boxplot(fill = "#d4edda", alpha = 0.6, outlier.shape = NA) +
+      geom_jitter(width = 0.15, size = 1.5, alpha = 0.6, color = "#2171b5") +
+      labs(
+        x = NULL,
+        y = "Rejection Rate",
+        title = paste0("Batch-to-Batch Consistency: ", rate_labels[rate_col])
+      ) +
+      theme_minimal(base_size = 13) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+    print(p)
+  })
+
+  # Test statistic distribution: histogram of obs_stat per config
+  output$diag_tstat_plot <- renderPlot({
+    sql <- "SELECT obs_stat, n, phi, innov_dist FROM simulations WHERE obs_stat IS NOT NULL"
+    params <- list()
+
+    if (length(input$diag_n_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_n_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND n IN (", ph, ")")
+      params <- c(params, as.list(as.integer(input$diag_n_filter)))
+    }
+    if (length(input$diag_phi_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_phi_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND phi IN (", ph, ")")
+      params <- c(params, as.list(as.numeric(input$diag_phi_filter)))
+    }
+    if (length(input$diag_innov_filter) > 0) {
+      ph <- paste(rep("?", length(input$diag_innov_filter)), collapse = ", ")
+      sql <- paste0(sql, " AND innov_dist IN (", ph, ")")
+      params <- c(params, as.list(input$diag_innov_filter))
+    }
+
+    df <- tryCatch(dbGetQuery(con, sql, params = params), error = function(e) data.frame())
+
+    if (nrow(df) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No data matching filters", cex = 1.2, col = "grey50")
+      return()
+    }
+
+    df$config <- sprintf("%s / n=%s / phi=%s", df$innov_dist, df$n, df$phi)
+    n_configs <- length(unique(df$config))
+
+    p <- ggplot(df, aes(x = obs_stat)) +
+      geom_histogram(bins = 50, fill = "#4292c6", color = "white", alpha = 0.8) +
+      labs(
+        x = "Observed Test Statistic",
+        y = "Count",
+        title = "Distribution of Observed Test Statistics"
+      ) +
+      theme_minimal(base_size = 14)
+
+    if (n_configs > 1 && n_configs <= 12) {
+      p <- p + facet_wrap(~ config, scales = "free")
+    } else if (n_configs > 12) {
+      p <- p + facet_wrap(~ config, scales = "free", ncol = 4)
+    }
+
+    print(p)
+  })
 }
 
 # =============================================================================
-# Run App
+# Run
 # =============================================================================
 
 shinyApp(ui = ui, server = server)

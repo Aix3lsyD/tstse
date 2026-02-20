@@ -8,7 +8,8 @@ test_that("wbg_boot returns expected structure", {
 
   expect_type(result, "list")
   expect_named(result, c("p", "phi", "vara", "pvalue", "pvalue_upper", "pvalue_lower",
-                         "pvalue_asymp", "tco_obs", "boot_tstats", "n", "nb", "boot_seeds", "master_seed"))
+                         "pvalue_quantile", "pvalue_asymp", "tco_obs", "boot_tstats",
+                         "n", "nb", "boot_seeds", "master_seed"))
   expect_true(result$p >= 0)
   expect_true(result$pvalue >= 0 && result$pvalue <= 1)
   expect_equal(result$nb, 49L)

@@ -1,107 +1,80 @@
 #' Launch Bootstrap Simulation Viewer
 #'
-#' Opens an interactive Shiny application for exploring bootstrap simulation
-#' results stored in a DuckDB database.
+#' Opens an interactive Shiny application for exploring DuckDB-stored
+#' Monte Carlo bootstrap simulation results. Provides rejection rate tables
+#' with color coding and flexible ggplot2 visualizations.
 #'
-#' @param db_path Character. Path to the DuckDB database file. If NULL,
-#'   opens the app without a database loaded (user can browse but won't see data).
-#' @param launch.browser Logical. If TRUE (default), opens the app in a browser.
-#'   If FALSE, returns the app URL for manual navigation.
-#' @param port Integer. Port number for the Shiny app. Default is random.
-#' @param host Character. Host address. Default is "127.0.0.1" (localhost only).
-#'
-#' @return Invisibly returns NULL. The function launches a Shiny app and
-#'   blocks until the app is closed.
+#' @param db_path Path to a DuckDB database file. If omitted, falls back to
+#'   `getOption("tstse.viewer_db")`.
 #'
 #' @details
-#' The viewer provides:
-#' \itemize{
-#'   \item Study/DGP/Method/Trial navigation and filtering
-#'   \item Rejection rate summaries with standard errors
-#'   \item Individual run inspection with bootstrap distribution plots
-#'   \item Custom SQL query interface
-#'   \item CSV export of results
-#' }
+#' The viewer is read-only and does not modify the database. It queries the
+#' `v_rejection_rates` and `v_rejection_rates_by_batch` views from the flat
+#' two-table schema (batches + simulations). Supports pooled and per-batch
+#' rejection rates, power curve plots, heatmaps, and bootstrap distribution
+#' histograms.
 #'
-#' Requires the `shiny`, `DT`, `duckdb`, and `DBI` packages to be installed.
+#' Required packages (all in Suggests): shiny, DT, ggplot2, duckdb, DBI.
+#'
+#' @return Launches the Shiny app (does not return until the app is closed).
 #'
 #' @examples
 #' \dontrun{
-#' # View results from a simulation study
-#' boot_db_viewer("my_simulations.duckdb")
+#' boot_db_viewer("path/to/study.duckdb")
 #'
-#' # Or after running simulations:
-#' study <- boot_study("results.duckdb", "My Study",
-#'                     dgp = list(n = 100, ar_phi = 0.7),
-#'                     method = list(name = "wbg_boot", nb = 399))
-#' # ... run simulations ...
-#' study$complete()
-#' study$end()
-#'
-#' # Now view the results
-#' boot_db_viewer("results.duckdb")
+#' # Or set the option globally
+#' options(tstse.viewer_db = "path/to/study.duckdb")
+#' boot_db_viewer()
 #' }
 #'
-#' @seealso [boot_study()], [boot_db_connect()], [boot_db_query()]
 #' @export
-boot_db_viewer <- function(db_path = NULL,
-                           launch.browser = TRUE,
-                           port = NULL,
-                           host = "127.0.0.1") {
+boot_db_viewer <- function(db_path = NULL) {
+  if (is.null(db_path)) {
+    db_path <- getOption("tstse.viewer_db")
+  }
+  if (is.null(db_path)) {
+    stop(
+      "No database path provided. Pass db_path or set options(tstse.viewer_db = ...)",
+      call. = FALSE
+    )
+  }
+  # Normalize to absolute path so the Shiny app can find it regardless of working directory
+  db_path <- normalizePath(db_path, mustWork = FALSE)
+  if (!file.exists(db_path)) {
+    stop("Database file not found: ", db_path, call. = FALSE)
+  }
 
- # Check for required packages
-  required_pkgs <- c("shiny", "DT", "duckdb", "DBI")
-  missing <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
-
+  pkgs <- c("shiny", "DT", "ggplot2", "duckdb", "DBI")
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing) > 0) {
     stop(
-      "The following packages are required for the viewer:\n",
-      paste0("  - ", missing, collapse = "\n"), "\n",
-      "Install with: install.packages(c(", paste0('"', missing, '"', collapse = ", "), "))",
+      "Required packages not installed: ", paste(missing, collapse = ", "),
+      "\nInstall with: install.packages(c(",
+      paste0('"', missing, '"', collapse = ", "), "))",
       call. = FALSE
     )
   }
 
-  # Find the app directory
-  app_dir <- system.file("shiny/boot_viewer", package = "tstse")
-  if (app_dir == "") {
-    stop(
-      "Shiny app not found. This can happen if:\n",
-      "  1. The package was not properly installed\n",
-      "  2. You're using devtools::load_all() and inst/ wasn't copied\n",
-      "Try reinstalling with: devtools::install() or remotes::install_github(...)",
-      call. = FALSE
-    )
-  }
-
-  # Validate database path if provided
-  if (!is.null(db_path)) {
-    if (!file.exists(db_path)) {
-      stop("Database file not found: ", db_path, call. = FALSE)
-    }
-    # Normalize to absolute path
-    db_path <- normalizePath(db_path, mustWork = TRUE)
-  }
-
-  # Set the database path option (read by the app)
+  # Pass db_path to the app via option
   old_opt <- getOption("tstse.viewer_db")
   options(tstse.viewer_db = db_path)
+  on.exit(options(tstse.viewer_db = old_opt), add = TRUE)
 
-  # Restore option on exit
- on.exit(options(tstse.viewer_db = old_opt), add = TRUE)
-
-  # Build runApp arguments
-  run_args <- list(
-    appDir = app_dir,
-    launch.browser = launch.browser,
-    host = host
-  )
-  if (!is.null(port)) {
-    run_args$port <- port
+  app_dir <- system.file("shiny", "boot_viewer", package = "tstse")
+  if (app_dir == "") {
+    # Fallback for devtools::load_all() or development
+    app_dir <- file.path(
+      system.file(package = "tstse"),
+      "..", "..", "inst", "shiny", "boot_viewer"
+    )
+    if (!dir.exists(app_dir)) {
+      # Direct path for load_all from source tree
+      app_dir <- file.path(getwd(), "inst", "shiny", "boot_viewer")
+    }
+  }
+  if (!dir.exists(app_dir)) {
+    stop("Cannot find boot_viewer app directory", call. = FALSE)
   }
 
-  # Launch the app
-  do.call(shiny::runApp, run_args)
-
-  invisible(NULL)
+  shiny::runApp(app_dir)
 }

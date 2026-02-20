@@ -2,10 +2,10 @@
 % Please edit documentation in R/duckdb_utils.R
 \name{duckdb_utils}
 \alias{duckdb_utils}
-\title{DuckDB Utilities for Bootstrap Simulation Studies}
+\title{DuckDB Utilities for Monte Carlo Simulation Studies}
 \description{
 Functions for storing and querying bootstrap simulation results in a
-DuckDB database. Enables reproducible research, post-hoc analysis,
-and systematic comparison of bootstrap methods.
+DuckDB database. Flat two-table schema optimized for a single capstone
+study analyzing WBG bootstrap rejection rates.
 }
 \keyword{internal}

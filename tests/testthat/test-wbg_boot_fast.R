@@ -237,3 +237,102 @@ test_that("wbg_boot_fast t-stat matches wbg_boot", {
   # They use same CO algorithm
   expect_equal(fast_result$tco_obs, orig_result$tco_obs, tolerance = 0.01)
 })
+
+
+# ==============================================================================
+# COBA (bootadj) tests
+# ==============================================================================
+
+test_that("wbg_boot_fast bootadj returns correct structure", {
+  set.seed(42)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  result <- wbg_boot_fast(x, nb = 49, bootadj = TRUE, seed = 123)
+
+  expect_s3_class(result, "wbg_boot_fast")
+  expect_true("pvalue_adj" %in% names(result))
+  expect_true("adj_factor" %in% names(result))
+  expect_true("median_phi" %in% names(result))
+  expect_true("tco_obs_adj" %in% names(result))
+})
+
+test_that("wbg_boot_fast bootadj produces valid numeric results", {
+  set.seed(42)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  result <- wbg_boot_fast(x, nb = 49, bootadj = TRUE, seed = 123)
+
+  expect_true(is.numeric(result$pvalue_adj))
+  expect_false(is.na(result$pvalue_adj))
+  expect_false(is.nan(result$pvalue_adj))
+  expect_gte(result$pvalue_adj, 0)
+  expect_lte(result$pvalue_adj, 1)
+  expect_true(is.numeric(result$adj_factor))
+  expect_false(is.na(result$adj_factor))
+  expect_gt(result$adj_factor, 0)
+})
+
+
+# ==============================================================================
+# min_p tests
+# ==============================================================================
+
+test_that("wbg_boot_fast min_p = 1 selects at least AR(1)", {
+  set.seed(42)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  result <- wbg_boot_fast(x, nb = 49, min_p = 1L, seed = 123)
+
+  expect_gte(result$p, 1)
+})
+
+test_that("wbg_boot_fast min_p = 0 allows AR(0)", {
+  set.seed(42)
+  x <- rnorm(200)  # White noise
+
+  result <- wbg_boot_fast(x, nb = 49, min_p = 0L, seed = 123)
+
+  # Should work regardless of whether it selects AR(0)
+  expect_s3_class(result, "wbg_boot_fast")
+  expect_gte(result$p, 0)
+})
+
+
+# ==============================================================================
+# pvalue_quantile tests
+# ==============================================================================
+
+test_that("wbg_boot_fast returns pvalue_quantile", {
+  set.seed(42)
+  x <- arima.sim(list(ar = 0.7), n = 100)
+
+  result <- wbg_boot_fast(x, nb = 99, seed = 123)
+
+  expect_true("pvalue_quantile" %in% names(result))
+  expect_gte(result$pvalue_quantile, 0)
+  expect_lte(result$pvalue_quantile, 1)
+
+  # pvalue_quantile should equal 2 * min(upper, lower)
+  expected <- 2 * min(result$pvalue_upper, result$pvalue_lower)
+  expect_equal(result$pvalue_quantile, expected)
+})
+
+
+# ==============================================================================
+# COBA degenerate input guard tests
+# ==============================================================================
+
+test_that("wbg_boot_fast COBA handles near-constant input without NaN", {
+  # Near-constant series: tiny variance
+  x <- rep(1, 50) + rnorm(50, sd = 1e-10)
+
+  # Should produce valid results without error, possibly with a warning
+  result <- suppressWarnings(
+    wbg_boot_fast(x, nb = 49, bootadj = TRUE, seed = 123)
+  )
+
+  # Must produce valid results, not NaN/NA
+  expect_false(is.na(result$pvalue_adj))
+  expect_false(is.nan(result$pvalue_adj))
+  expect_true(result$pvalue_adj >= 0 && result$pvalue_adj <= 1)
+})
