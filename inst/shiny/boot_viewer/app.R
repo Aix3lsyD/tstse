@@ -284,6 +284,10 @@ ui <- fluidPage(
               column(3,
                 selectInput("grid1_phi", "Phi:",
                             choices = NULL)
+              ),
+              column(3,
+                selectInput("grid1_batch", "Batch:",
+                            choices = c("All (Pooled)" = "all"))
               )
             ),
             DTOutput("grid1_table")
@@ -302,6 +306,10 @@ ui <- fluidPage(
               column(3,
                 selectInput("grid2_n", "Sample Size (n):",
                             choices = NULL)
+              ),
+              column(3,
+                selectInput("grid2_batch", "Batch:",
+                            choices = c("All (Pooled)" = "all"))
               )
             ),
             DTOutput("grid2_table")
@@ -320,6 +328,10 @@ ui <- fluidPage(
               column(3,
                 selectInput("grid3_n", "Sample Size (n):",
                             choices = NULL)
+              ),
+              column(3,
+                selectInput("grid3_batch", "Batch:",
+                            choices = c("All (Pooled)" = "all"))
               )
             ),
             DTOutput("grid3_table")
@@ -599,10 +611,18 @@ server <- function(input, output, session) {
   # Grid query helper (independent of sidebar filters)
   # ---------------------------------------------------------------------------
   grid_query <- function(innov_dist = NULL, phi = NULL, n = NULL,
-                         order_col = "n") {
-    sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
+                         order_col = "n", batch_id = NULL) {
+    if (!is.null(batch_id) && batch_id != "all") {
+      sql <- "SELECT * FROM v_rejection_rates_by_batch WHERE 1=1"
+    } else {
+      sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
+    }
     params <- list()
 
+    if (!is.null(batch_id) && batch_id != "all") {
+      sql <- paste0(sql, " AND batch_id = ?")
+      params <- c(params, list(as.integer(batch_id)))
+    }
     if (!is.null(innov_dist)) {
       sql <- paste0(sql, " AND innov_dist = ?")
       params <- c(params, list(innov_dist))
@@ -622,6 +642,62 @@ server <- function(input, output, session) {
       error = function(e) data.frame()
     )
   }
+
+  # ---------------------------------------------------------------------------
+  # Grid batch choices helper: returns batches matching a config filter
+  # ---------------------------------------------------------------------------
+  grid_batch_choices <- function(innov_dist = NULL, phi = NULL, n = NULL) {
+    sql <- paste0(
+      "SELECT DISTINCT b.batch_id, b.label ",
+      "FROM simulations s JOIN batches b ON s.batch_id = b.batch_id WHERE 1=1"
+    )
+    params <- list()
+    if (!is.null(innov_dist)) {
+      sql <- paste0(sql, " AND s.innov_dist = ?")
+      params <- c(params, list(innov_dist))
+    }
+    if (!is.null(phi)) {
+      sql <- paste0(sql, " AND s.phi = ?")
+      params <- c(params, list(as.numeric(phi)))
+    }
+    if (!is.null(n)) {
+      sql <- paste0(sql, " AND s.n = ?")
+      params <- c(params, list(as.integer(n)))
+    }
+    sql <- paste0(sql, " ORDER BY b.batch_id")
+    batches <- tryCatch(dbGetQuery(con, sql, params = params),
+                        error = function(e) data.frame())
+    if (nrow(batches) == 0) return(c("All (Pooled)" = "all"))
+    choices <- setNames(
+      as.character(batches$batch_id),
+      ifelse(is.na(batches$label) | batches$label == "",
+             paste("Batch", batches$batch_id),
+             paste0("Batch ", batches$batch_id, ": ", batches$label))
+    )
+    c("All (Pooled)" = "all", choices)
+  }
+
+  # Update per-grid batch dropdowns when their config filters change
+  observe({
+    req(input$grid1_innov, input$grid1_phi)
+    choices <- grid_batch_choices(innov_dist = input$grid1_innov, phi = input$grid1_phi)
+    sel <- if (input$grid1_batch %in% choices) input$grid1_batch else "all"
+    updateSelectInput(session, "grid1_batch", choices = choices, selected = sel)
+  })
+
+  observe({
+    req(input$grid2_innov, input$grid2_n)
+    choices <- grid_batch_choices(innov_dist = input$grid2_innov, n = input$grid2_n)
+    sel <- if (input$grid2_batch %in% choices) input$grid2_batch else "all"
+    updateSelectInput(session, "grid2_batch", choices = choices, selected = sel)
+  })
+
+  observe({
+    req(input$grid3_phi, input$grid3_n)
+    choices <- grid_batch_choices(phi = input$grid3_phi, n = input$grid3_n)
+    sel <- if (input$grid3_batch %in% choices) input$grid3_batch else "all"
+    updateSelectInput(session, "grid3_batch", choices = choices, selected = sel)
+  })
 
   # ---------------------------------------------------------------------------
   # Grid DT formatting helper
@@ -1433,7 +1509,8 @@ server <- function(input, output, session) {
     req(input$grid1_innov, input$grid1_phi)
     grid_query(innov_dist = input$grid1_innov,
                phi = input$grid1_phi,
-               order_col = "n")
+               order_col = "n",
+               batch_id = input$grid1_batch)
   })
 
   output$grid1_table <- renderDT({
@@ -1445,7 +1522,8 @@ server <- function(input, output, session) {
     req(input$grid2_innov, input$grid2_n)
     grid_query(innov_dist = input$grid2_innov,
                n = input$grid2_n,
-               order_col = "phi")
+               order_col = "phi",
+               batch_id = input$grid2_batch)
   })
 
   output$grid2_table <- renderDT({
@@ -1457,7 +1535,8 @@ server <- function(input, output, session) {
     req(input$grid3_phi, input$grid3_n)
     grid_query(phi = input$grid3_phi,
                n = input$grid3_n,
-               order_col = "innov_dist")
+               order_col = "innov_dist",
+               batch_id = input$grid3_batch)
   })
 
   output$grid3_table <- renderDT({

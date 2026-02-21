@@ -20,3 +20,8 @@ simulations/
 .rshiny-docs/
 .claude/
 openspec/
+.memelord/
+.codex/
+.mcp.json
+config/
+opencode.json
