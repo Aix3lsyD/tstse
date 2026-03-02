@@ -336,10 +336,14 @@ test_that("make_gen_hetero accepts numeric vector for w", {
   expect_length(x, 50)
 })
 
-test_that("make_gen_hetero vector w must have sufficient length", {
-  weights <- rep(1, 50)
+test_that("make_gen_hetero vector w left-pads when n > length(w)", {
+  weights <- rep(2, 50)
   gen <- make_gen_hetero(w = weights)
-  expect_error(gen(100), "Weight vector must have length >= n")
+  set.seed(42)
+  x <- gen(100)
+  expect_length(x, 100)
+  # First 50 positions should use w[1]=2, last 50 should also use 2
+  # (all weights are 2 here, so all positions scale equally)
 })
 
 test_that("make_gen_hetero respects sd parameter", {

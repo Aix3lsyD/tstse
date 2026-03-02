@@ -742,11 +742,12 @@ make_gen_hetero <- function(w = NULL, sd = 1) {
         stop("Weight function must return exactly n values")
       }
     } else {
-      # w is a numeric vector
+      # w is a numeric vector; left-pad with first weight for burn-in positions
       if (length(w) < n) {
-        stop("Weight vector must have length >= n (", n, ")")
+        weights <- c(rep(w[1], n - length(w)), w)
+      } else {
+        weights <- w[seq_len(n)]
       }
-      weights <- w[seq_len(n)]
     }
 
     # Generate scaled innovations

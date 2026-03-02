@@ -142,7 +142,7 @@ mod_innovation_comp_server <- function(id, con, init_choices) {
         h_sd <- input$innov_hetero_sd
         if (is.null(h_sd) || is.na(h_sd) || h_sd <= 0) h_sd <- 1
         hetero_y <- gen_aruma_flex(n, phi = phi,
-                                   innov_gen = make_gen_hetero(sd = h_sd),
+                                   innov_gen = make_gen_hetero(w = seq(1,10, seq.length=input$innov_n), sd = h_sd),
                                    seed = seed, plot = FALSE)$y
 
         # Slot 4: Laplace
