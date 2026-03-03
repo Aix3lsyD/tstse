@@ -17,6 +17,17 @@ library(ggplot2)
 
 # thematic_shiny() is called inside the server function so it can access session
 
+# Check if a database is available before building UI
+.has_db <- local({
+  db_path <- getOption("tstse.viewer_db")
+  !is.null(db_path) && nzchar(db_path) && file.exists(db_path)
+})
+
+# Tab names that require a database connection
+.DB_TAB_NAMES <- c("Database Overview", "Rejection Rates", "Plots",
+                    "P-value Diagnostics", "Bootstrap Distribution",
+                    "Analysis Grids", "Parallel Coordinates", "Diagnostics")
+
 # =============================================================================
 # UI
 # =============================================================================
@@ -41,13 +52,35 @@ ui <- page_fluid(
         background-color: #6c2022 !important;
         color: #f8d7da !important;
       }
-    '))
+      /* Disabled tab styling */
+      .nav-tabs .nav-link.tab-disabled {
+        color: var(--bs-secondary-color) !important;
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+    ')),
+    # Disable DB-dependent tabs on page load when no database
+    if (!.has_db) tags$script(HTML(paste0("
+      $(function() {
+        var dbTabs = ['", paste(.DB_TAB_NAMES, collapse = "','"), "'];
+        $('#main_tabs .nav-link').each(function() {
+          if (dbTabs.indexOf($(this).text().trim()) !== -1) {
+            $(this).addClass('tab-disabled');
+          }
+        });
+      });
+    ")))
   ),
 
   div(
     class = "d-flex justify-content-between align-items-center mb-3",
     h2("Monte Carlo Simulation Viewer", style = "margin: 0;"),
-    input_dark_mode(id = "dark_mode", mode = "dark")
+    div(
+      class = "d-flex align-items-center gap-3",
+      if (!.has_db) span(class = "badge bg-warning text-dark", "No database connected"),
+      input_dark_mode(id = "dark_mode", mode = "dark")
+    )
   ),
 
   tabsetPanel(
@@ -73,36 +106,57 @@ ui <- page_fluid(
 server <- function(input, output, session) {
   thematic_shiny()
 
-  # Database connection
+  # Database connection (NULL if no db_path provided)
   db_path <- getOption("tstse.viewer_db")
-  con <- dbConnect(duckdb(), dbdir = db_path, read_only = TRUE)
-  onStop(function() dbDisconnect(con, shutdown = TRUE))
+  has_db <- !is.null(db_path) && nzchar(db_path) && file.exists(db_path)
+
+  if (has_db) {
+    con <- dbConnect(duckdb(), dbdir = db_path, read_only = TRUE)
+    onStop(function() dbDisconnect(con, shutdown = TRUE))
+  } else {
+    con <- NULL
+  }
 
   # Populate initial filter choices (shared across modules)
-  init_choices <- tryCatch({
-    n_vals <- dbGetQuery(con, "SELECT DISTINCT n FROM simulations ORDER BY n")
-    phi_vals <- dbGetQuery(con, "SELECT DISTINCT phi FROM simulations ORDER BY phi")
-    innov_vals <- dbGetQuery(con, "SELECT DISTINCT innov_dist FROM simulations ORDER BY innov_dist")
-    list(
-      n = as.character(n_vals$n),
-      phi = as.character(phi_vals$phi),
-      innov = innov_vals$innov_dist
-    )
-  }, error = function(e) list(n = character(0), phi = character(0), innov = character(0)))
+  init_choices <- if (has_db) {
+    tryCatch({
+      n_vals <- dbGetQuery(con, "SELECT DISTINCT n FROM simulations ORDER BY n")
+      phi_vals <- dbGetQuery(con, "SELECT DISTINCT phi FROM simulations ORDER BY phi")
+      innov_vals <- dbGetQuery(con, "SELECT DISTINCT innov_dist FROM simulations ORDER BY innov_dist")
+      list(
+        n = as.character(n_vals$n),
+        phi = as.character(phi_vals$phi),
+        innov = innov_vals$innov_dist
+      )
+    }, error = function(e) list(n = character(0), phi = character(0), innov = character(0)))
+  } else {
+    list(n = character(0), phi = character(0), innov = character(0))
+  }
 
   # Reactive values shared across modules
   rv <- reactiveValues()
   observe({ rv$dark_mode <- input$dark_mode })
 
-  # Module servers
-  mod_overview_server("overview", con)
-  mod_rejection_rates_server("rr", con, init_choices)
-  mod_plots_server("plots", con, init_choices)
-  mod_pvalue_server("pval", con, init_choices)
-  mod_bootstrap_dist_server("bootdist", con)
-  mod_analysis_grids_server("grids", con, init_choices)
-  mod_parallel_coords_server("parcoord", con, init_choices)
-  mod_diagnostics_server("diag", con, init_choices)
+  # Select Ad-Hoc Simulation tab when no DB is connected
+  if (!has_db) {
+    updateTabsetPanel(session, "main_tabs", selected = "Ad-Hoc Simulation")
+  }
+
+  # --- Module servers ---
+
+  # DB-dependent modules: only initialize when we have a connection
+  if (has_db) {
+    mod_overview_server("overview", con)
+    mod_rejection_rates_server("rr", con, init_choices)
+    mod_plots_server("plots", con, init_choices)
+    mod_pvalue_server("pval", con, init_choices)
+    mod_bootstrap_dist_server("bootdist", con)
+    mod_analysis_grids_server("grids", con, init_choices)
+    mod_parallel_coords_server("parcoord", con, init_choices)
+    mod_diagnostics_server("diag", con, init_choices)
+  }
+
+  # DB-independent modules: always initialize
   mod_innovation_comp_server("innovcomp", con, init_choices)
   mod_benchmark_server("bench", con)
   mod_adhoc_sim_server("adhoc", con, db_path)

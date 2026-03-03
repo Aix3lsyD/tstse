@@ -672,70 +672,252 @@ make_gen_garch <- function(omega,
 
 
 # ==============================================================================
-# Heteroscedastic Normal Innovation Generator
+# Heteroscedastic Innovation Generator (internal helper + factory)
 # ==============================================================================
 
-#' Create a Heteroscedastic Normal Innovation Generator
+# Build a weight-generating function from a named shape specification.
+# Returns function(n) that produces the weight vector.
+# @keywords internal
+.hetero_shape_weights <- function(shape, from, to, power, breaks, levels,
+                                  base_w, amplitude, period) {
+  shape <- match.arg(shape, c("linear", "sqrt", "log", "power", "exp",
+                               "step", "periodic"))
+
+  # Validate from/to for shapes that use them
+  if (!shape %in% c("step", "periodic")) {
+    if (!is.numeric(from) || length(from) != 1L || !is.finite(from) || from <= 0) {
+      stop("'from' must be a single positive finite number")
+    }
+    if (!is.numeric(to) || length(to) != 1L || !is.finite(to) || to <= 0) {
+      stop("'to' must be a single positive finite number")
+    }
+  }
+
+  switch(shape,
+    "linear" = {
+      force(from); force(to)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        from + (to - from) * t
+      }
+    },
+    "sqrt" = {
+      force(from); force(to)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        from + (to - from) * sqrt(t)
+      }
+    },
+    "log" = {
+      force(from); force(to)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        from + (to - from) * log1p(t * (exp(1) - 1))
+      }
+    },
+    "power" = {
+      if (!is.numeric(power) || length(power) != 1L || !is.finite(power) || power <= 0) {
+        stop("'power' must be a single positive finite number")
+      }
+      force(from); force(to); force(power)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        from + (to - from) * t^power
+      }
+    },
+    "exp" = {
+      force(from); force(to)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        from * (to / from)^t
+      }
+    },
+    "step" = {
+      if (is.null(breaks) || !is.numeric(breaks) || length(breaks) < 1L) {
+        stop("'breaks' must be a numeric vector of at least length 1 for 'step' shape")
+      }
+      if (any(breaks <= 0) || any(breaks >= 1)) {
+        stop("'breaks' values must be in (0, 1)")
+      }
+      if (is.unsorted(breaks)) {
+        stop("'breaks' must be sorted in increasing order")
+      }
+      if (is.null(levels) || !is.numeric(levels)) {
+        stop("'levels' must be a numeric vector for 'step' shape")
+      }
+      if (length(levels) != length(breaks) + 1L) {
+        stop("'levels' must have length(breaks) + 1 elements")
+      }
+      if (any(levels <= 0)) {
+        stop("All 'levels' must be positive (they represent SD weights)")
+      }
+      force(breaks); force(levels)
+      function(n) {
+        t <- seq(0, 1, length.out = n)
+        cut_idx <- findInterval(t, c(0, breaks, 1), rightmost.closed = TRUE)
+        cut_idx <- pmin(pmax(cut_idx, 1L), length(levels))
+        levels[cut_idx]
+      }
+    },
+    "periodic" = {
+      if (!is.numeric(base_w) || length(base_w) != 1L || !is.finite(base_w) || base_w <= 0) {
+        stop("'base_w' must be a single positive finite number")
+      }
+      if (!is.numeric(amplitude) || length(amplitude) != 1L || !is.finite(amplitude)) {
+        stop("'amplitude' must be a single finite number")
+      }
+      if (!is.numeric(period) || length(period) != 1L || !is.finite(period) || period <= 0) {
+        stop("'period' must be a single positive finite number")
+      }
+      if (base_w - abs(amplitude) <= 0) {
+        warning("base_w - |amplitude| <= 0: weights may go non-positive, which flips sign of innovations")
+      }
+      force(base_w); force(amplitude); force(period)
+      function(n) {
+        base_w + amplitude * sin(2 * pi * seq_len(n) / period)
+      }
+    }
+  )
+}
+
+
+#' Create a Heteroscedastic Innovation Generator
 #'
 #' Factory function that returns an innovation generator with time-varying
-#' variance. Innovations are scaled by weights w, allowing for patterns like
-#' increasing variance, periodic variance, or custom heteroscedasticity.
+#' variance. Supports named shape patterns with range control, custom weight
+#' functions/vectors, and composition with any base distribution.
 #'
-#' @param w Weight specification. One of:
+#' @param w Weight specification for legacy interface. One of:
 #'   \itemize{
-#'     \item \code{NULL} (default): Use linear weights \code{1, 2, ..., n}
-#'       (variance increases linearly with time)
+#'     \item \code{NULL} (default): Use linear weights from 1 to 10
+#'       (when \code{shape} is also NULL)
 #'     \item A function: Called as \code{w(n)} to generate n weights
-#'     \item A numeric vector: Used directly; must have length >= n when
-#'       generator is called
+#'     \item A numeric vector: Used directly; left-padded with \code{w[1]}
+#'       if shorter than n
 #'   }
-#' @param sd Base standard deviation before weighting. Default is 1.
+#'   Mutually exclusive with \code{shape}.
+#' @param sd Base standard deviation when using normal base distribution.
+#'   Default is 1. Mutually exclusive with \code{base} (when non-default).
+#' @param shape Named weight pattern. One of \code{"linear"}, \code{"sqrt"},
+#'   \code{"log"}, \code{"power"}, \code{"exp"}, \code{"step"},
+#'   \code{"periodic"}. Mutually exclusive with \code{w}.
+#' @param from Starting weight (SD multiplier) for shape patterns. Default 1.
+#' @param to Ending weight (SD multiplier) for shape patterns. Default 10.
+#' @param power Exponent for \code{shape = "power"}. Default 2.
+#' @param breaks Numeric vector of breakpoints in (0, 1) for
+#'   \code{shape = "step"}. Proportions of the series length.
+#' @param levels Numeric vector of positive SD weights for
+#'   \code{shape = "step"}. Must have \code{length(breaks) + 1} elements.
+#' @param base_w Base weight for \code{shape = "periodic"}. Default 1.
+#' @param amplitude Amplitude for \code{shape = "periodic"}. Default 0.5.
+#' @param period Period (in observations) for \code{shape = "periodic"}.
+#'   Default 12.
+#' @param base A base innovation generator function (e.g.,
+#'   \code{make_gen_t(df = 3)}). When NULL (default), uses
+#'   \code{make_gen_norm(sd = sd)}.
 #'
 #' @return A function with signature \code{function(n)} that generates
-#'   \code{n} heteroscedastic normal innovations.
+#'   \code{n} heteroscedastic innovations.
 #'
 #' @details
-#' The generator produces: \code{w[1:n] * rnorm(n, 0, sd)}
+#' The generator produces: \code{weights * base_gen(n)} where weights
+#' are determined by either \code{shape} or \code{w}, and \code{base_gen}
+#' is determined by \code{base} or \code{sd}.
 #'
-#' Common weight patterns:
+#' \strong{Shape formulas} (using normalized time \code{t} from 0 to 1):
 #' \itemize{
-#'   \item Linear: \code{w = NULL} or \code{w = function(n) seq_len(n)}
-#'   \item Sqrt: \code{w = function(n) sqrt(seq_len(n))}
-#'   \item Exponential: \code{w = function(n) exp(seq_len(n) / n)}
-#'   \item Periodic: \code{w = function(n) 1 + 0.5 * sin(2 * pi * seq_len(n) / 12)}
+#'   \item \code{"linear"}: \code{from + (to - from) * t}
+#'   \item \code{"sqrt"}: \code{from + (to - from) * sqrt(t)}
+#'   \item \code{"log"}: \code{from + (to - from) * log1p(t * (e - 1))}
+#'   \item \code{"power"}: \code{from + (to - from) * t^power}
+#'   \item \code{"exp"}: \code{from * (to / from)^t}
+#'   \item \code{"step"}: Piecewise constant at breakpoints
+#'   \item \code{"periodic"}: \code{base_w + amplitude * sin(2*pi*i/period)}
 #' }
+#'
+#' Note: weights scale the \strong{standard deviation}, not the variance.
+#' A weight of 5 means SD is 5x, so variance is 25x.
 #'
 #' @export
 #'
+#' @seealso \code{\link{make_gen_norm}}, \code{\link{make_gen_t}},
+#'   \code{\link{make_gen_skt}} for base distribution generators.
+#'
 #' @examples
-#' # Default linear increasing variance
+#' # Named shape with range
+#' gen <- make_gen_hetero(shape = "sqrt", from = 1, to = 5)
+#' plot(gen(200), type = "l")
+#'
+#' # Compose with t-distributed base
+#' gen_t <- make_gen_hetero(shape = "linear", from = 1, to = 5,
+#'                          base = make_gen_t(df = 3))
+#'
+#' # Step function (regime shift at midpoint)
+#' gen_step <- make_gen_hetero(shape = "step",
+#'                             breaks = c(0.5), levels = c(1, 5))
+#'
+#' # Legacy interface still works
 #' hetero_gen <- make_gen_hetero()
-#' innovations <- hetero_gen(100)
-#' plot(innovations, type = "l")
-#'
-#' # Custom weight function (sqrt growth)
 #' hetero_sqrt <- make_gen_hetero(w = function(n) sqrt(seq_len(n)))
-#'
-#' # Fixed weight vector
-#' weights <- c(rep(1, 50), rep(3, 50))  # Jump in variance
-#' hetero_jump <- make_gen_hetero(w = weights)
-make_gen_hetero <- function(w = NULL, sd = 1) {
-  if (sd <= 0) {
+#' hetero_jump <- make_gen_hetero(w = c(rep(1, 50), rep(3, 50)))
+make_gen_hetero <- function(w = NULL, sd = 1, shape = NULL,
+                            from = 1, to = 10, power = 2,
+                            breaks = NULL, levels = NULL,
+                            base_w = 1, amplitude = 0.5, period = 12,
+                            base = NULL) {
+
+  # --- Mutual exclusivity: shape vs w ---
+  if (!is.null(shape) && !is.null(w)) {
+    stop("Cannot specify both 'shape' and 'w'. Use 'shape' for named patterns or 'w' for custom weights.")
+  }
+
+  # --- Mutual exclusivity: sd vs base ---
+  if (!is.null(base) && !identical(sd, 1)) {
+    stop("Cannot specify both 'sd' (non-default) and 'base'. Use 'base' for custom distributions, or 'sd' with default normal.")
+  }
+
+  # --- Validate sd ---
+  if (is.numeric(sd) && sd <= 0) {
     stop("sd must be positive")
   }
 
-  # Validate w if provided as vector
+  # --- Validate base ---
+  if (!is.null(base) && !is.function(base)) {
+    stop("'base' must be a function (e.g., make_gen_t(df = 3))")
+  }
+
+  # --- Validate w (legacy path) ---
   if (!is.null(w) && !is.function(w) && !is.numeric(w)) {
     stop("w must be NULL, a function, or a numeric vector")
   }
 
+  # --- Resolve base distribution ---
+  if (!is.null(base)) {
+    base_gen <- base
+  } else {
+    base_gen <- make_gen_norm(sd = sd)
+  }
+
+  # --- Resolve weight strategy ---
+  if (!is.null(shape)) {
+    w_fun <- .hetero_shape_weights(shape, from, to, power, breaks, levels,
+                                   base_w, amplitude, period)
+  } else {
+    w_fun <- NULL
+  }
+
   force(w)
-  force(sd)
+  force(base_gen)
+  force(w_fun)
 
   function(n) {
     # Determine weights
-    if (is.null(w)) {
-      weights <- seq_len(n)
+    if (!is.null(w_fun)) {
+      # Shape-based path
+      weights <- w_fun(n)
+    } else if (is.null(w)) {
+      # Default legacy: linear weights from 1 to 10
+      weights <- seq(1, 10, length.out = n)
     } else if (is.function(w)) {
       weights <- w(n)
       if (length(weights) != n) {
@@ -751,6 +933,6 @@ make_gen_hetero <- function(w = NULL, sd = 1) {
     }
 
     # Generate scaled innovations
-    weights * rnorm(n, mean = 0, sd = sd)
+    weights * base_gen(n)
   }
 }

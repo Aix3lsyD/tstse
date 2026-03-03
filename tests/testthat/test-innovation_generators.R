@@ -305,7 +305,7 @@ test_that("make_gen_hetero generates numeric with no NA", {
   expect_false(any(is.na(x)))
 })
 
-test_that("make_gen_hetero default uses linear weights (1,2,...,n)", {
+test_that("make_gen_hetero default uses linear weights from 1 to 10", {
   gen <- make_gen_hetero()
   set.seed(42)
   x <- gen(100)
@@ -385,4 +385,214 @@ test_that("make_gen_hetero works with common weight patterns", {
   gen_periodic <- make_gen_hetero(w = function(n) 1 + 0.5 * sin(2 * pi * seq_len(n) / 12))
   x_periodic <- gen_periodic(48)
   expect_length(x_periodic, 48)
+})
+
+
+# ==============================================================================
+# make_gen_hetero shape-based tests
+# ==============================================================================
+
+test_that("make_gen_hetero shape='linear' produces correct weights", {
+  gen <- make_gen_hetero(shape = "linear", from = 2, to = 8)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  t_vec <- seq(0, 1, length.out = 100)
+  expected_w <- 2 + (8 - 2) * t_vec
+  expect_equal(x, expected_w * z)
+})
+
+test_that("make_gen_hetero shape='sqrt' produces correct weights", {
+  gen <- make_gen_hetero(shape = "sqrt", from = 1, to = 5)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  t_vec <- seq(0, 1, length.out = 100)
+  expected_w <- 1 + (5 - 1) * sqrt(t_vec)
+  expect_equal(x, expected_w * z)
+})
+
+test_that("make_gen_hetero shape='log' produces correct weights", {
+  gen <- make_gen_hetero(shape = "log", from = 1, to = 5)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  t_vec <- seq(0, 1, length.out = 100)
+  expected_w <- 1 + (5 - 1) * log1p(t_vec * (exp(1) - 1))
+  expect_equal(x, expected_w * z)
+})
+
+test_that("make_gen_hetero shape='power' uses power parameter", {
+  gen <- make_gen_hetero(shape = "power", from = 1, to = 5, power = 3)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  t_vec <- seq(0, 1, length.out = 100)
+  expected_w <- 1 + (5 - 1) * t_vec^3
+  expect_equal(x, expected_w * z)
+})
+
+test_that("make_gen_hetero shape='exp' produces exponential interpolation", {
+  gen <- make_gen_hetero(shape = "exp", from = 1, to = 5)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  t_vec <- seq(0, 1, length.out = 100)
+  expected_w <- 1 * (5 / 1)^t_vec
+  expect_equal(x, expected_w * z)
+})
+
+test_that("make_gen_hetero shape='step' produces piecewise constant weights", {
+  gen <- make_gen_hetero(shape = "step", breaks = c(0.5), levels = c(1, 5))
+  set.seed(42)
+  x <- gen(100)
+  expect_length(x, 100)
+  # First ~50 should have smaller variance, last ~50 larger
+  var_first <- var(x[1:40])
+  var_last <- var(x[61:100])
+  expect_true(var_last > var_first)
+})
+
+test_that("make_gen_hetero shape='periodic' produces sinusoidal weights", {
+  gen <- make_gen_hetero(shape = "periodic", base_w = 2, amplitude = 1, period = 12)
+  set.seed(42)
+  x <- gen(48)
+  set.seed(42)
+  z <- rnorm(48)
+  expected_w <- 2 + 1 * sin(2 * pi * seq_len(48) / 12)
+  expect_equal(x, expected_w * z)
+})
+
+# ==============================================================================
+# make_gen_hetero from/to range tests
+# ==============================================================================
+
+test_that("make_gen_hetero from == to gives constant weights", {
+  gen <- make_gen_hetero(shape = "linear", from = 3, to = 3)
+  set.seed(42)
+  x <- gen(100)
+  set.seed(42)
+  z <- rnorm(100)
+  expect_equal(x, 3 * z)
+})
+
+test_that("make_gen_hetero from > to gives decreasing variance", {
+  gen <- make_gen_hetero(shape = "linear", from = 10, to = 1)
+  set.seed(42)
+  x <- gen(1000)
+  var_first <- var(x[1:250])
+  var_last <- var(x[751:1000])
+  expect_true(var_first > var_last)
+})
+
+# ==============================================================================
+# make_gen_hetero base distribution composition tests
+# ==============================================================================
+
+test_that("make_gen_hetero with base uses custom distribution", {
+  t_gen <- make_gen_t(df = 5, scale = TRUE)
+  gen <- make_gen_hetero(shape = "linear", from = 1, to = 5, base = t_gen)
+  x <- gen(100)
+  expect_length(x, 100)
+  expect_type(x, "double")
+  expect_false(any(is.na(x)))
+})
+
+test_that("make_gen_hetero base=make_gen_norm(sd=2) matches sd=2", {
+  gen_sd <- make_gen_hetero(shape = "linear", from = 1, to = 5, sd = 2)
+  gen_base <- make_gen_hetero(shape = "linear", from = 1, to = 5,
+                               base = make_gen_norm(sd = 2))
+  set.seed(42)
+  x1 <- gen_sd(100)
+  set.seed(42)
+  x2 <- gen_base(100)
+  expect_equal(x1, x2)
+})
+
+test_that("make_gen_hetero with base and legacy w works", {
+  t_gen <- make_gen_t(df = 5, scale = TRUE)
+  gen <- make_gen_hetero(w = function(n) rep(2, n), base = t_gen)
+  x <- gen(50)
+  expect_length(x, 50)
+  expect_type(x, "double")
+})
+
+# ==============================================================================
+# make_gen_hetero mutual exclusivity tests
+# ==============================================================================
+
+test_that("make_gen_hetero errors when both shape and w provided", {
+  expect_error(
+    make_gen_hetero(shape = "linear", w = function(n) rep(1, n)),
+    "Cannot specify both"
+  )
+})
+
+test_that("make_gen_hetero errors when both sd != 1 and base provided", {
+  expect_error(
+    make_gen_hetero(sd = 2, base = make_gen_t(df = 5)),
+    "Cannot specify both"
+  )
+})
+
+test_that("make_gen_hetero allows sd=1 (default) with base", {
+  gen <- make_gen_hetero(shape = "linear", from = 1, to = 5,
+                          base = make_gen_t(df = 5))
+  expect_type(gen, "closure")
+})
+
+# ==============================================================================
+# make_gen_hetero shape parameter validation tests
+# ==============================================================================
+
+test_that("make_gen_hetero shape='power' requires positive power", {
+  expect_error(make_gen_hetero(shape = "power", power = 0), "'power' must be")
+  expect_error(make_gen_hetero(shape = "power", power = -1), "'power' must be")
+})
+
+test_that("make_gen_hetero shape='step' requires valid breaks and levels", {
+  expect_error(make_gen_hetero(shape = "step"), "'breaks' must be")
+  expect_error(make_gen_hetero(shape = "step", breaks = c(0.5)),
+               "'levels' must be")
+  expect_error(make_gen_hetero(shape = "step", breaks = c(0.5), levels = c(1)),
+               "length\\(breaks\\) \\+ 1")
+  expect_error(make_gen_hetero(shape = "step", breaks = c(1.5), levels = c(1, 2)),
+               "must be in \\(0, 1\\)")
+})
+
+test_that("make_gen_hetero shape='periodic' validates parameters", {
+  expect_error(make_gen_hetero(shape = "periodic", base_w = 0), "'base_w' must be")
+  expect_error(make_gen_hetero(shape = "periodic", period = 0), "'period' must be")
+})
+
+test_that("make_gen_hetero validates base is a function", {
+  expect_error(make_gen_hetero(base = 5), "'base' must be a function")
+  expect_error(make_gen_hetero(base = "norm"), "'base' must be a function")
+})
+
+test_that("make_gen_hetero rejects invalid shape name", {
+  expect_error(make_gen_hetero(shape = "invalid"))
+})
+
+# ==============================================================================
+# make_gen_hetero edge case tests
+# ==============================================================================
+
+test_that("make_gen_hetero shape works with n = 1", {
+  gen <- make_gen_hetero(shape = "linear", from = 2, to = 10)
+  x <- gen(1)
+  expect_length(x, 1)
+  expect_type(x, "double")
+})
+
+test_that("make_gen_hetero shape='step' with multiple breaks works", {
+  gen <- make_gen_hetero(shape = "step", breaks = c(0.25, 0.5, 0.75),
+                          levels = c(1, 2, 3, 4))
+  x <- gen(100)
+  expect_length(x, 100)
 })

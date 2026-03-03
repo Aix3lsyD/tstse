@@ -137,6 +137,9 @@ gen_aruma_flex <- function(n,
     if (!is.function(innov_gen)) {
       stop("`innov_gen` must be a function with signature function(n)")
     }
+    if (vara != 1) {
+      warning("`vara` is ignored when `innov_gen` is provided")
+    }
     innov_type <- "Custom"
   }
 

@@ -5,7 +5,9 @@
 #' with color coding and flexible ggplot2 visualizations.
 #'
 #' @param db_path Path to a DuckDB database file. If omitted, falls back to
-#'   `getOption("tstse.viewer_db")`.
+#'   `getOption("tstse.viewer_db")`. If \code{NULL} and no option is set,
+#'   the app launches in simulation-only mode with database-dependent tabs
+#'   disabled.
 #'
 #' @details
 #' The viewer is read-only and does not modify the database. It queries the
@@ -13,6 +15,10 @@
 #' two-table schema (batches + simulations). Supports pooled and per-batch
 #' rejection rates, power curve plots, heatmaps, and bootstrap distribution
 #' histograms.
+#'
+#' When launched without a database, the Innovation Comparison, Benchmark,
+#' and Ad-Hoc Simulation tabs are fully functional. All other tabs are
+#' disabled.
 #'
 #' Required packages (all in Suggests): shiny, DT, ggplot2, duckdb, DBI.
 #'
@@ -25,6 +31,9 @@
 #' # Or set the option globally
 #' options(tstse.viewer_db = "path/to/study.duckdb")
 #' boot_db_viewer()
+#'
+#' # Launch without a database (simulation-only mode)
+#' boot_db_viewer(NULL)
 #' }
 #'
 #' @export
@@ -32,16 +41,12 @@ boot_db_viewer <- function(db_path = NULL) {
   if (is.null(db_path)) {
     db_path <- getOption("tstse.viewer_db")
   }
-  if (is.null(db_path)) {
-    stop(
-      "No database path provided. Pass db_path or set options(tstse.viewer_db = ...)",
-      call. = FALSE
-    )
-  }
-  # Normalize to absolute path so the Shiny app can find it regardless of working directory
-  db_path <- normalizePath(db_path, mustWork = FALSE)
-  if (!file.exists(db_path)) {
-    stop("Database file not found: ", db_path, call. = FALSE)
+  if (!is.null(db_path)) {
+    # Normalize to absolute path so the Shiny app can find it regardless of working directory
+    db_path <- normalizePath(db_path, mustWork = FALSE)
+    if (!file.exists(db_path)) {
+      stop("Database file not found: ", db_path, call. = FALSE)
+    }
   }
 
   pkgs <- c("shiny", "DT", "ggplot2", "duckdb", "DBI")

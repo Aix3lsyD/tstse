@@ -232,20 +232,30 @@ test_that("plot.aruma with ggplot2 works", {
 # Backward compatibility test
 # ==============================================================================
 
-test_that("gen_aruma_flex matches gen_aruma with normal innovations", {
-  # With the same seed and normal innovations, output should match gen_aruma
-  set.seed(42)
-  r_flex <- gen_aruma_flex(n = 200, phi = 0.5, theta = 0.3, plot = FALSE, seed = 42)
-  set.seed(42)
-  r_orig <- gen_aruma(n = 200, phi = 0.5, theta = 0.3, plot = FALSE, seed = 42)
+test_that("gen_aruma_flex produces similar ACF structure to gen_aruma", {
+  # Both functions use arima.sim internally but different burn-in strategies,
+  # so values won't match. Verify statistical structure is equivalent.
+  n <- 2000
+  r_flex <- gen_aruma_flex(n = n, phi = 0.5, theta = 0.3, plot = FALSE, seed = 42)
+  r_orig <- gen_aruma(n = n, phi = 0.5, theta = 0.3, plot = FALSE, seed = 42)
 
-  # Note: The implementations may differ slightly due to different burn-in handling.
-  # We just verify both produce valid output with similar statistical properties.
-  expect_length(r_flex$y, 200)
-  expect_length(r_orig, 200)
+  expect_length(r_flex$y, n)
+  expect_length(r_orig, n)
 
-  # Both should be roughly similar in scale (same AR/MA structure)
-  expect_true(abs(var(r_flex$y) - var(r_orig)) / var(r_orig) < 1)  # Within 100%
+  # Both should have similar lag-1 ACF (theoretical for ARMA(1,1) with
+  # phi=0.5, theta=0.3 is well-defined and both should be close)
+  acf_flex <- acf(r_flex$y, lag.max = 5, plot = FALSE)$acf[2]  # lag-1
+
+  acf_orig <- acf(r_orig, lag.max = 5, plot = FALSE)$acf[2]    # lag-1
+  expect_true(abs(acf_flex - acf_orig) < 0.15)
+
+  # Both should be approximately mean zero (stationary ARMA)
+  expect_true(abs(mean(r_flex$y)) < 1)
+  expect_true(abs(mean(r_orig)) < 1)
+
+  # Variance should be within 50% (same model, different realizations)
+  var_ratio <- var(r_flex$y) / var(r_orig)
+  expect_true(var_ratio > 0.5 && var_ratio < 2.0)
 })
 
 
@@ -267,4 +277,104 @@ test_that("gen_aruma_flex handles small n", {
 test_that("gen_aruma_flex handles large n", {
   result <- gen_aruma_flex(n = 1000, phi = 0.5, plot = FALSE, seed = 42)
   expect_length(result$y, 1000)
+})
+
+
+# ==============================================================================
+# Statistical property tests
+# ==============================================================================
+
+test_that("gen_aruma_flex AR(1) lag-1 ACF matches theoretical", {
+  # For AR(1) with phi=0.5, theoretical lag-1 ACF = 0.5
+  result <- gen_aruma_flex(n = 5000, phi = 0.5, plot = FALSE, seed = 42)
+  sample_acf1 <- acf(result$y, lag.max = 1, plot = FALSE)$acf[2]
+  expect_true(abs(sample_acf1 - 0.5) < 0.05)
+})
+
+test_that("gen_aruma_flex variance scales with vara", {
+  r1 <- gen_aruma_flex(n = 2000, phi = 0.3, vara = 1, plot = FALSE, seed = 42)
+  r4 <- gen_aruma_flex(n = 2000, phi = 0.3, vara = 4, plot = FALSE, seed = 43)
+
+  # For AR(1) with phi=0.3, process variance = vara / (1 - phi^2)
+  # Ratio should be approximately 4
+  ratio <- var(r4$y) / var(r1$y)
+  expect_true(ratio > 2 && ratio < 8)
+})
+
+test_that("gen_aruma_flex differenced series is stationary", {
+  result <- gen_aruma_flex(n = 500, phi = 0.5, d = 1, plot = FALSE, seed = 42)
+
+  # Differencing should yield a stationary series
+  diffs <- diff(result$y)
+  expect_true(abs(mean(diffs)) < 2)
+
+  # ACF should decay (not persist at high values)
+  acf_vals <- acf(diffs, lag.max = 10, plot = FALSE)$acf[-1]
+  expect_true(all(abs(acf_vals) < 1))
+})
+
+test_that("gen_aruma_flex t-innovations produce heavier tails", {
+  n <- 5000
+  r_norm <- gen_aruma_flex(n = n, phi = 0.3, plot = FALSE, seed = 42)
+  t_gen <- make_gen_t(df = 3, scale = TRUE)
+  r_t <- gen_aruma_flex(n = n, phi = 0.3, innov_gen = t_gen, plot = FALSE, seed = 42)
+
+  # t(3) should produce higher excess kurtosis than normal
+  kurt_norm <- sum((r_norm$y - mean(r_norm$y))^4) / (n * sd(r_norm$y)^4) - 3
+  kurt_t <- sum((r_t$y - mean(r_t$y))^4) / (n * sd(r_t$y)^4) - 3
+  expect_true(kurt_t > kurt_norm)
+})
+
+test_that("gen_aruma_flex white noise has near-zero ACF", {
+  result <- gen_aruma_flex(n = 5000, plot = FALSE, seed = 42)
+  acf_vals <- acf(result$y, lag.max = 5, plot = FALSE)$acf[-1]
+
+  # All lag-k ACFs should be near zero (within ~2/sqrt(n) ≈ 0.028)
+  expect_true(all(abs(acf_vals) < 0.1))
+})
+
+
+# ==============================================================================
+# Additional edge case tests
+# ==============================================================================
+
+test_that("gen_aruma_flex handles n = 1", {
+  result <- gen_aruma_flex(n = 1, phi = 0.5, plot = FALSE, seed = 42)
+  expect_length(result$y, 1)
+  expect_type(result$y, "double")
+  expect_false(is.na(result$y))
+})
+
+test_that("gen_aruma_flex handles combined d + s + lambda", {
+  result <- gen_aruma_flex(n = 200, phi = 0.5, d = 1, s = 4, lambda = 0.8,
+                            plot = FALSE, seed = 42)
+  expect_length(result$y, 200)
+  expect_equal(result$d, 1L)
+  expect_equal(result$s, 4L)
+  expect_equal(result$lambda, 0.8)
+  expect_false(any(is.na(result$y)))
+})
+
+test_that("gen_aruma_flex handles high-order AR", {
+  # AR(5) exercises adaptive burn-in: n_start = max(100, 10*5) = 100
+  phi5 <- c(0.3, 0.2, 0.1, 0.05, 0.02)
+  result <- gen_aruma_flex(n = 200, phi = phi5, plot = FALSE, seed = 42)
+  expect_length(result$y, 200)
+  expect_equal(result$p, 5L)
+  expect_false(any(is.na(result$y)))
+})
+
+test_that("gen_aruma_flex warns when vara and innov_gen both provided", {
+  t_gen <- make_gen_t(df = 5, scale = TRUE)
+  expect_warning(
+    gen_aruma_flex(n = 50, phi = 0.5, innov_gen = t_gen, vara = 4, plot = FALSE, seed = 42),
+    "vara.*ignored"
+  )
+})
+
+test_that("gen_aruma_flex no warning when vara=1 and innov_gen provided", {
+  t_gen <- make_gen_t(df = 5, scale = TRUE)
+  expect_no_warning(
+    gen_aruma_flex(n = 50, phi = 0.5, innov_gen = t_gen, vara = 1, plot = FALSE, seed = 42)
+  )
 })

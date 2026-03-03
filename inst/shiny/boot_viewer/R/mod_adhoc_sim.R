@@ -30,7 +30,7 @@ mod_adhoc_sim_ui <- function(id) {
         wellPanel(
           h4("DGP Parameters"),
           numericInput(ns("sim_phi"), "AR(1) Phi", value = 0.95,
-                       min = 0.01, max = 0.999, step = 0.01),
+                       min = 0, max = 0.999, step = 0.01),
           numericInput(ns("sim_n"), "Sample Size (n)", value = 200,
                        min = 10, max = 2000, step = 10),
           selectInput(ns("sim_innov_dist"), "Innovation Distribution",
@@ -94,7 +94,44 @@ mod_adhoc_sim_ui <- function(id) {
           conditionalPanel(
             condition = "input.sim_innov_dist == 'Heteroscedastic'",
             ns = ns,
-            numericInput(ns("sim_hetero_sd"), "sd", value = 1, min = 0.001, step = 0.1)
+            selectInput(ns("sim_hetero_shape"), "Weight Shape",
+                        choices = c("linear", "sqrt", "log", "power", "exp",
+                                    "step", "periodic"),
+                        selected = "linear"),
+            conditionalPanel(
+              condition = paste0(
+                "input.sim_hetero_shape == 'linear' || ",
+                "input.sim_hetero_shape == 'sqrt' || ",
+                "input.sim_hetero_shape == 'log' || ",
+                "input.sim_hetero_shape == 'power' || ",
+                "input.sim_hetero_shape == 'exp'"),
+              ns = ns,
+              numericInput(ns("sim_hetero_from"), "From (start weight)",
+                           value = 1, min = 0.01, step = 0.1),
+              numericInput(ns("sim_hetero_to"), "To (end weight)",
+                           value = 10, min = 0.01, step = 0.1)
+            ),
+            conditionalPanel(
+              condition = "input.sim_hetero_shape == 'power'",
+              ns = ns,
+              numericInput(ns("sim_hetero_power"), "Power", value = 2, min = 0.1, step = 0.1)
+            ),
+            conditionalPanel(
+              condition = "input.sim_hetero_shape == 'step'",
+              ns = ns,
+              textInput(ns("sim_hetero_breaks"), "Breaks (comma-separated, 0-1)", value = "0.5"),
+              textInput(ns("sim_hetero_levels"), "Levels (comma-separated, SD weights)", value = "1, 5")
+            ),
+            conditionalPanel(
+              condition = "input.sim_hetero_shape == 'periodic'",
+              ns = ns,
+              numericInput(ns("sim_hetero_base_w"), "Base Weight",
+                           value = 1, min = 0.01, step = 0.1),
+              numericInput(ns("sim_hetero_amplitude"), "Amplitude", value = 0.5, step = 0.1),
+              numericInput(ns("sim_hetero_period"), "Period (observations)",
+                           value = 12, min = 1, step = 1)
+            ),
+            numericInput(ns("sim_hetero_sd"), "sd (base normal)", value = 1, min = 0.001, step = 0.1)
           )
         ),
 
@@ -142,6 +179,10 @@ mod_adhoc_sim_ui <- function(id) {
           tabPanel("Innovation Diagnostics",
             br(),
             plotOutput(ns("sim_innov_diag"), height = "900px")
+          ),
+          tabPanel("Null Model Diagnostics",
+            br(),
+            plotOutput(ns("sim_null_diag"), height = "900px")
           )
         )
       )
@@ -187,7 +228,28 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
             sprintf("arch(%s)", paste(alpha, collapse = ","))
           }
         },
-        "Heteroscedastic" = sprintf("hetero(%s)", input$sim_hetero_sd),
+        "Heteroscedastic" = {
+          shape <- input$sim_hetero_shape %||% "linear"
+          sd_val <- input$sim_hetero_sd %||% 1
+          switch(shape,
+            "linear" =, "sqrt" =, "log" =, "exp" =
+              sprintf("hetero(%s,%s-%s,sd=%s)", shape,
+                      input$sim_hetero_from %||% 1, input$sim_hetero_to %||% 10, sd_val),
+            "power" =
+              sprintf("hetero(power,%s-%s,p=%s,sd=%s)",
+                      input$sim_hetero_from %||% 1, input$sim_hetero_to %||% 10,
+                      input$sim_hetero_power %||% 2, sd_val),
+            "step" =
+              sprintf("hetero(step,%s|%s,sd=%s)",
+                      input$sim_hetero_breaks %||% "0.5",
+                      input$sim_hetero_levels %||% "1,5", sd_val),
+            "periodic" =
+              sprintf("hetero(periodic,bw=%s,amp=%s,per=%s,sd=%s)",
+                      input$sim_hetero_base_w %||% 1,
+                      input$sim_hetero_amplitude %||% 0.5,
+                      input$sim_hetero_period %||% 12, sd_val)
+          )
+        },
         "unknown"
       )
     }
@@ -261,7 +323,37 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         "Heteroscedastic" = {
           sd_val <- input$sim_hetero_sd
           if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-          make_gen_hetero(sd = sd_val)
+          shape <- input$sim_hetero_shape %||% "linear"
+          switch(shape,
+            "linear" =, "sqrt" =, "log" =, "exp" = {
+              from_val <- input$sim_hetero_from %||% 1
+              to_val <- input$sim_hetero_to %||% 10
+              make_gen_hetero(shape = shape, from = from_val, to = to_val, sd = sd_val)
+            },
+            "power" = {
+              from_val <- input$sim_hetero_from %||% 1
+              to_val <- input$sim_hetero_to %||% 10
+              p_val <- input$sim_hetero_power %||% 2
+              make_gen_hetero(shape = "power", from = from_val, to = to_val,
+                              power = p_val, sd = sd_val)
+            },
+            "step" = {
+              breaks_str <- input$sim_hetero_breaks %||% "0.5"
+              levels_str <- input$sim_hetero_levels %||% "1, 5"
+              brk <- as.numeric(trimws(strsplit(breaks_str, ",")[[1]]))
+              lvl <- as.numeric(trimws(strsplit(levels_str, ",")[[1]]))
+              if (any(is.na(brk))) brk <- 0.5
+              if (any(is.na(lvl))) lvl <- c(1, 5)
+              make_gen_hetero(shape = "step", breaks = brk, levels = lvl, sd = sd_val)
+            },
+            "periodic" = {
+              bw <- input$sim_hetero_base_w %||% 1
+              amp <- input$sim_hetero_amplitude %||% 0.5
+              per <- input$sim_hetero_period %||% 12
+              make_gen_hetero(shape = "periodic", base_w = bw, amplitude = amp,
+                              period = per, sd = sd_val)
+            }
+          )
         }
       )
     }
@@ -363,7 +455,7 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
       # Read and clamp inputs
       phi <- input$sim_phi
       if (is.null(phi) || is.na(phi)) phi <- 0.95
-      phi <- max(0.01, min(0.999, phi))
+      phi <- max(0, min(0.999, phi))
 
       n <- as.integer(input$sim_n)
       if (is.na(n) || n < 10) n <- 10L
@@ -812,6 +904,94 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         qqnorm(innov, main = sprintf("Normal QQ Plot (%s)", dist_label),
                col = "steelblue", pch = 16, cex = 0.6)
         qqline(innov, col = "red", lwd = 2)
+      }
+    })
+
+    # Null Model Diagnostics (AR order, variance, rejection by order)
+    output$sim_null_diag <- renderPlot(bg = "transparent", {
+      op <- viewer_base_par()
+      on.exit(par(op), add = TRUE)
+      res <- sim_results_rv()
+      if (is.null(res)) {
+        plot.new()
+        text(0.5, 0.5, "Run a simulation to see null model diagnostics.",
+             cex = 1.2, col = "grey50")
+        return()
+      }
+
+      results <- res$results
+      nsims <- res$nsims
+      fg <- viewer_plot_fg()
+      par(mfrow = c(3, 1), mar = c(5, 5, 3.5, 1.5),
+          col.axis = fg, col.lab = fg, col.main = fg, fg = fg)
+
+      # Extract diagnostics from all simulations
+      ar_orders <- vapply(results, function(r) r$p, integer(1))
+      varas <- vapply(results, function(r) r$vara, numeric(1))
+      pvals_boot <- vapply(results, function(r) r$pvalue, numeric(1))
+      pvals_asymp <- vapply(results, function(r) r$pvalue_asymp, numeric(1))
+
+      # --- Panel 1: AR Order Distribution ---
+      order_tbl <- table(factor(ar_orders, levels = 0:res$maxp))
+      order_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
+      barplot(order_tbl,
+              col = order_cols[seq_len(res$maxp + 1)],
+              border = NA,
+              main = sprintf("Fitted Null AR Order  (n=%d sims, min_p=%d, maxp=%d)",
+                             nsims, res$min_p, res$maxp),
+              xlab = "AR Order", ylab = "Count")
+      # Annotate modal order
+      modal_order <- as.integer(names(which.max(order_tbl)))
+      modal_pct <- max(order_tbl) / nsims * 100
+      mtext(sprintf("Mode: AR(%d) = %.0f%%", modal_order, modal_pct),
+            side = 3, adj = 1, line = 0, cex = 1.0, col = fg)
+
+      # --- Panel 2: Innovation Variance Distribution ---
+      hist(varas, breaks = 30,
+           col = adjustcolor("steelblue", alpha.f = 0.6),
+           border = "white",
+           main = "Estimated Innovation Variance (null_vara)",
+           xlab = expression(hat(sigma)[a]^2), ylab = "Frequency")
+      abline(v = mean(varas), col = "#e41a1c", lwd = 2, lty = 1)
+      abline(v = median(varas), col = "#ff7f00", lwd = 2, lty = 2)
+      legend("topright",
+             legend = c(sprintf("Mean = %.4f", mean(varas)),
+                        sprintf("Median = %.4f", median(varas)),
+                        sprintf("SD = %.4f", sd(varas))),
+             col = c("#e41a1c", "#ff7f00", NA),
+             lwd = c(2, 2, NA), lty = c(1, 2, NA),
+             bty = "n", cex = 1.1, text.col = fg)
+
+      # --- Panel 3: Rejection Rate by AR Order ---
+      unique_orders <- sort(unique(ar_orders))
+      if (length(unique_orders) > 0) {
+        boot_rates <- numeric(length(unique_orders))
+        asymp_rates <- numeric(length(unique_orders))
+        counts <- integer(length(unique_orders))
+        for (j in seq_along(unique_orders)) {
+          idx <- ar_orders == unique_orders[j]
+          counts[j] <- sum(idx)
+          boot_rates[j] <- mean(pvals_boot[idx] < 0.05, na.rm = TRUE)
+          asymp_rates[j] <- mean(pvals_asymp[idx] < 0.05, na.rm = TRUE)
+        }
+
+        rate_mat <- rbind(boot_rates, asymp_rates)
+        colnames(rate_mat) <- paste0("AR(", unique_orders, ")\nn=", counts)
+        bp <- barplot(rate_mat, beside = TRUE,
+                      col = c("#377eb8", "#e41a1c"), border = NA,
+                      main = "Rejection Rate by Fitted AR Order",
+                      xlab = "AR Order (with sim count)", ylab = "Rejection Rate",
+                      ylim = c(0, max(0.15, max(rate_mat) * 1.2)))
+        abline(h = 0.05, lty = 2, col = "grey50", lwd = 1.5)
+        legend("topright",
+               legend = c("Bootstrap", "Asymptotic", "Nominal 0.05"),
+               col = c("#377eb8", "#e41a1c", "grey50"),
+               lwd = c(NA, NA, 1.5), lty = c(NA, NA, 2),
+               pch = c(15, 15, NA), pt.cex = 2,
+               bty = "n", cex = 1.1, text.col = fg)
+      } else {
+        plot.new()
+        text(0.5, 0.5, "No results to display", cex = 1.2, col = "grey50")
       }
     })
 

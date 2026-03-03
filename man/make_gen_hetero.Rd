@@ -2,52 +2,111 @@
 % Please edit documentation in R/innovation_generators.R
 \name{make_gen_hetero}
 \alias{make_gen_hetero}
-\title{Create a Heteroscedastic Normal Innovation Generator}
+\title{Create a Heteroscedastic Innovation Generator}
 \usage{
-make_gen_hetero(w = NULL, sd = 1)
+make_gen_hetero(
+  w = NULL,
+  sd = 1,
+  shape = NULL,
+  from = 1,
+  to = 10,
+  power = 2,
+  breaks = NULL,
+  levels = NULL,
+  base_w = 1,
+  amplitude = 0.5,
+  period = 12,
+  base = NULL
+)
 }
 \arguments{
-\item{w}{Weight specification. One of:
+\item{w}{Weight specification for legacy interface. One of:
 \itemize{
-\item \code{NULL} (default): Use linear weights \code{1, 2, ..., n}
-(variance increases linearly with time)
+\item \code{NULL} (default): Use linear weights from 1 to 10
+(when \code{shape} is also NULL)
 \item A function: Called as \code{w(n)} to generate n weights
-\item A numeric vector: Used directly; must have length >= n when
-generator is called
-}}
+\item A numeric vector: Used directly; left-padded with \code{w[1]}
+if shorter than n
+}
+Mutually exclusive with \code{shape}.}
 
-\item{sd}{Base standard deviation before weighting. Default is 1.}
+\item{sd}{Base standard deviation when using normal base distribution.
+Default is 1. Mutually exclusive with \code{base} (when non-default).}
+
+\item{shape}{Named weight pattern. One of \code{"linear"}, \code{"sqrt"},
+\code{"log"}, \code{"power"}, \code{"exp"}, \code{"step"},
+\code{"periodic"}. Mutually exclusive with \code{w}.}
+
+\item{from}{Starting weight (SD multiplier) for shape patterns. Default 1.}
+
+\item{to}{Ending weight (SD multiplier) for shape patterns. Default 10.}
+
+\item{power}{Exponent for \code{shape = "power"}. Default 2.}
+
+\item{breaks}{Numeric vector of breakpoints in (0, 1) for
+\code{shape = "step"}. Proportions of the series length.}
+
+\item{levels}{Numeric vector of positive SD weights for
+\code{shape = "step"}. Must have \code{length(breaks) + 1} elements.}
+
+\item{base_w}{Base weight for \code{shape = "periodic"}. Default 1.}
+
+\item{amplitude}{Amplitude for \code{shape = "periodic"}. Default 0.5.}
+
+\item{period}{Period (in observations) for \code{shape = "periodic"}.
+Default 12.}
+
+\item{base}{A base innovation generator function (e.g.,
+\code{make_gen_t(df = 3)}). When NULL (default), uses
+\code{make_gen_norm(sd = sd)}.}
 }
 \value{
 A function with signature \code{function(n)} that generates
-\code{n} heteroscedastic normal innovations.
+\code{n} heteroscedastic innovations.
 }
 \description{
 Factory function that returns an innovation generator with time-varying
-variance. Innovations are scaled by weights w, allowing for patterns like
-increasing variance, periodic variance, or custom heteroscedasticity.
+variance. Supports named shape patterns with range control, custom weight
+functions/vectors, and composition with any base distribution.
 }
 \details{
-The generator produces: \code{w[1:n] * rnorm(n, 0, sd)}
+The generator produces: \code{weights * base_gen(n)} where weights
+are determined by either \code{shape} or \code{w}, and \code{base_gen}
+is determined by \code{base} or \code{sd}.
 
-Common weight patterns:
+\strong{Shape formulas} (using normalized time \code{t} from 0 to 1):
 \itemize{
-\item Linear: \code{w = NULL} or \code{w = function(n) seq_len(n)}
-\item Sqrt: \code{w = function(n) sqrt(seq_len(n))}
-\item Exponential: \code{w = function(n) exp(seq_len(n) / n)}
-\item Periodic: \code{w = function(n) 1 + 0.5 * sin(2 * pi * seq_len(n) / 12)}
+\item \code{"linear"}: \code{from + (to - from) * t}
+\item \code{"sqrt"}: \code{from + (to - from) * sqrt(t)}
+\item \code{"log"}: \code{from + (to - from) * log1p(t * (e - 1))}
+\item \code{"power"}: \code{from + (to - from) * t^power}
+\item \code{"exp"}: \code{from * (to / from)^t}
+\item \code{"step"}: Piecewise constant at breakpoints
+\item \code{"periodic"}: \code{base_w + amplitude * sin(2*pi*i/period)}
 }
+
+Note: weights scale the \strong{standard deviation}, not the variance.
+A weight of 5 means SD is 5x, so variance is 25x.
 }
 \examples{
-# Default linear increasing variance
+# Named shape with range
+gen <- make_gen_hetero(shape = "sqrt", from = 1, to = 5)
+plot(gen(200), type = "l")
+
+# Compose with t-distributed base
+gen_t <- make_gen_hetero(shape = "linear", from = 1, to = 5,
+                         base = make_gen_t(df = 3))
+
+# Step function (regime shift at midpoint)
+gen_step <- make_gen_hetero(shape = "step",
+                            breaks = c(0.5), levels = c(1, 5))
+
+# Legacy interface still works
 hetero_gen <- make_gen_hetero()
-innovations <- hetero_gen(100)
-plot(innovations, type = "l")
-
-# Custom weight function (sqrt growth)
 hetero_sqrt <- make_gen_hetero(w = function(n) sqrt(seq_len(n)))
-
-# Fixed weight vector
-weights <- c(rep(1, 50), rep(3, 50))  # Jump in variance
-hetero_jump <- make_gen_hetero(w = weights)
+hetero_jump <- make_gen_hetero(w = c(rep(1, 50), rep(3, 50)))
+}
+\seealso{
+\code{\link{make_gen_norm}}, \code{\link{make_gen_t}},
+\code{\link{make_gen_skt}} for base distribution generators.
 }
