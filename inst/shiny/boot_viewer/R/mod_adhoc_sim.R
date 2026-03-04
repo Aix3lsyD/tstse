@@ -183,7 +183,8 @@ mod_adhoc_sim_ui <- function(id) {
           tabPanel("Null Model Diagnostics",
             br(),
             plotOutput(ns("sim_null_diag"), height = "900px")
-          )
+          ),
+          mod_adhoc_profile_ui(ns)
         )
       )
     )
@@ -202,160 +203,13 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
     sim_results_rv <- reactiveVal(NULL)
 
     # Helper: build innov_dist string from selection and params
+    # Delegates to shared helpers in utils.R via .adhoc_params_from_input()
     .build_innov_dist_str <- function(dist, input) {
-      switch(dist,
-        "Normal" = "norm",
-        "Student's t" = sprintf("t(%s)", input$sim_t_df),
-        "Skew-t" = sprintf("skt(%s,%s)", input$sim_skt_df, input$sim_skt_alpha),
-        "GED" = sprintf("ged(%s)", input$sim_ged_nu),
-        "Laplace" = "laplace",
-        "Uniform" = "unif",
-        "Mixture Normal" = sprintf("mixnorm(%s,%s,%s)",
-                                    input$sim_mix_sd1, input$sim_mix_sd2, input$sim_mix_prob1),
-        "GARCH" = {
-          alpha_str <- input$sim_garch_alpha
-          alpha <- tryCatch(
-            as.numeric(trimws(strsplit(alpha_str, ",")[[1]])),
-            warning = function(w) NULL, error = function(e) NULL)
-          beta_str <- trimws(input$sim_garch_beta)
-          has_beta <- nzchar(beta_str) && beta_str != ""
-          if (has_beta) {
-            beta <- tryCatch(as.numeric(trimws(strsplit(beta_str, ",")[[1]])),
-                             warning = function(w) NULL, error = function(e) NULL)
-            sprintf("garch(%s,%s)", input$sim_garch_omega,
-                    paste(c(alpha, beta), collapse = ","))
-          } else {
-            sprintf("arch(%s)", paste(alpha, collapse = ","))
-          }
-        },
-        "Heteroscedastic" = {
-          shape <- input$sim_hetero_shape %||% "linear"
-          sd_val <- input$sim_hetero_sd %||% 1
-          switch(shape,
-            "linear" =, "sqrt" =, "log" =, "exp" =
-              sprintf("hetero(%s,%s-%s,sd=%s)", shape,
-                      input$sim_hetero_from %||% 1, input$sim_hetero_to %||% 10, sd_val),
-            "power" =
-              sprintf("hetero(power,%s-%s,p=%s,sd=%s)",
-                      input$sim_hetero_from %||% 1, input$sim_hetero_to %||% 10,
-                      input$sim_hetero_power %||% 2, sd_val),
-            "step" =
-              sprintf("hetero(step,%s|%s,sd=%s)",
-                      input$sim_hetero_breaks %||% "0.5",
-                      input$sim_hetero_levels %||% "1,5", sd_val),
-            "periodic" =
-              sprintf("hetero(periodic,bw=%s,amp=%s,per=%s,sd=%s)",
-                      input$sim_hetero_base_w %||% 1,
-                      input$sim_hetero_amplitude %||% 0.5,
-                      input$sim_hetero_period %||% 12, sd_val)
-          )
-        },
-        "unknown"
-      )
+      build_innov_dist_str(dist, .adhoc_params_from_input(input))
     }
 
-    # Helper: build innov_gen from selection and params
     .build_innov_gen <- function(dist, input) {
-      switch(dist,
-        "Normal" = {
-          sd_val <- input$sim_norm_sd
-          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-          make_gen_norm(sd = sd_val)
-        },
-        "Student's t" = {
-          df_val <- input$sim_t_df
-          if (is.null(df_val) || is.na(df_val) || df_val < 1) df_val <- 3
-          scale_val <- isTRUE(input$sim_t_scale)
-          make_gen_t(df = df_val, scale = scale_val)
-        },
-        "Skew-t" = {
-          df_val <- input$sim_skt_df
-          if (is.null(df_val) || is.na(df_val) || df_val < 3) df_val <- 5
-          alpha_val <- input$sim_skt_alpha
-          if (is.null(alpha_val) || is.na(alpha_val)) alpha_val <- 0
-          scale_val <- isTRUE(input$sim_skt_scale)
-          make_gen_skt(df = df_val, alpha = alpha_val, scale = scale_val)
-        },
-        "GED" = {
-          nu_val <- input$sim_ged_nu
-          if (is.null(nu_val) || is.na(nu_val) || nu_val <= 0) nu_val <- 2
-          sd_val <- input$sim_ged_sd
-          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-          make_gen_ged(nu = nu_val, sd = sd_val)
-        },
-        "Laplace" = {
-          sc <- input$sim_lap_scale
-          if (is.null(sc) || is.na(sc) || sc <= 0) sc <- 1 / sqrt(2)
-          make_gen_laplace(scale = sc)
-        },
-        "Uniform" = {
-          hw <- input$sim_unif_hw
-          if (is.null(hw) || is.na(hw) || hw <= 0) hw <- sqrt(3)
-          make_gen_unif(half_width = hw)
-        },
-        "Mixture Normal" = {
-          sd1 <- input$sim_mix_sd1
-          sd2 <- input$sim_mix_sd2
-          p1 <- input$sim_mix_prob1
-          if (is.null(sd1) || is.na(sd1) || sd1 <= 0) sd1 <- 1
-          if (is.null(sd2) || is.na(sd2) || sd2 <= 0) sd2 <- 3
-          if (is.null(p1) || is.na(p1) || p1 <= 0 || p1 >= 1) p1 <- 0.9
-          make_gen_mixnorm(sd1 = sd1, sd2 = sd2, prob1 = p1)
-        },
-        "GARCH" = {
-          omega <- input$sim_garch_omega
-          if (is.null(omega) || is.na(omega) || omega <= 0) omega <- 0.1
-          alpha_str <- input$sim_garch_alpha
-          alpha <- tryCatch(
-            as.numeric(trimws(strsplit(alpha_str, ",")[[1]])),
-            warning = function(w) NULL, error = function(e) NULL)
-          if (is.null(alpha) || any(is.na(alpha)) || length(alpha) == 0)
-            alpha <- c(0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025)
-          beta_str <- trimws(input$sim_garch_beta)
-          beta <- NULL
-          if (nzchar(beta_str) && beta_str != "") {
-            beta <- tryCatch(as.numeric(trimws(strsplit(beta_str, ",")[[1]])),
-                             warning = function(w) NULL, error = function(e) NULL)
-            if (!is.null(beta) && (any(is.na(beta)) || length(beta) == 0)) beta <- NULL
-          }
-          make_gen_garch(omega = omega, alpha = alpha, beta = beta)
-        },
-        "Heteroscedastic" = {
-          sd_val <- input$sim_hetero_sd
-          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-          shape <- input$sim_hetero_shape %||% "linear"
-          switch(shape,
-            "linear" =, "sqrt" =, "log" =, "exp" = {
-              from_val <- input$sim_hetero_from %||% 1
-              to_val <- input$sim_hetero_to %||% 10
-              make_gen_hetero(shape = shape, from = from_val, to = to_val, sd = sd_val)
-            },
-            "power" = {
-              from_val <- input$sim_hetero_from %||% 1
-              to_val <- input$sim_hetero_to %||% 10
-              p_val <- input$sim_hetero_power %||% 2
-              make_gen_hetero(shape = "power", from = from_val, to = to_val,
-                              power = p_val, sd = sd_val)
-            },
-            "step" = {
-              breaks_str <- input$sim_hetero_breaks %||% "0.5"
-              levels_str <- input$sim_hetero_levels %||% "1, 5"
-              brk <- as.numeric(trimws(strsplit(breaks_str, ",")[[1]]))
-              lvl <- as.numeric(trimws(strsplit(levels_str, ",")[[1]]))
-              if (any(is.na(brk))) brk <- 0.5
-              if (any(is.na(lvl))) lvl <- c(1, 5)
-              make_gen_hetero(shape = "step", breaks = brk, levels = lvl, sd = sd_val)
-            },
-            "periodic" = {
-              bw <- input$sim_hetero_base_w %||% 1
-              amp <- input$sim_hetero_amplitude %||% 0.5
-              per <- input$sim_hetero_period %||% 12
-              make_gen_hetero(shape = "periodic", base_w = bw, amplitude = amp,
-                              period = per, sd = sd_val)
-            }
-          )
-        }
-      )
+      build_innov_gen(dist, .adhoc_params_from_input(input))
     }
 
     # Helper: compute theoretical density for a distribution
@@ -1025,6 +879,30 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
                          type = "error", duration = 8)
       })
     })
+
+    # --- Performance Profile sub-tab ---
+    adhoc_params <- reactive({
+      dist <- input$sim_innov_dist
+      innov_gen <- tryCatch(.build_innov_gen(dist, input), error = function(e) NULL)
+
+      phi <- input$sim_phi
+      if (is.null(phi) || is.na(phi)) phi <- 0.95
+      phi <- max(0, min(0.999, phi))
+
+      list(
+        n         = as.integer(input$sim_n %||% 200),
+        phi       = phi,
+        innov_gen = innov_gen,
+        nb        = as.integer(input$sim_nb %||% 399),
+        maxp      = min(as.integer(input$sim_maxp %||% 5), 20L),
+        criterion = match.arg(input$sim_criterion %||% "aic",
+                              c("aic", "aicc", "bic")),
+        bootadj   = isTRUE(input$sim_bootadj),
+        min_p     = if (isTRUE(input$sim_minp1)) 1L else 0L
+      )
+    })
+
+    mod_adhoc_profile_server(input, output, session, adhoc_params = adhoc_params)
 
   })
 }

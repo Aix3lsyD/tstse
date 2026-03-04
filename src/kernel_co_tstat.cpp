@@ -61,7 +61,7 @@ static arma::vec ols_detrend_internal(const arma::vec& x) {
 
 // Workspace-aware OLS detrend (ZERO allocations)
 // Writes detrended residuals directly into workspace.resid
-static void ols_detrend_ws(const arma::vec& x, CoBootstrapWorkspace& ws) {
+void ols_detrend_ws(const arma::vec& x, CoBootstrapWorkspace& ws) {
     const int n = x.n_elem;
 
     // Closed-form formulas for t = 1, 2, ..., n
@@ -125,7 +125,7 @@ double ols_tstat_internal(const arma::vec& y, const arma::vec& t_idx) {
 // Fused CO t-statistic: single-pass, zero-allocation for steps 3-5
 // Computes AR transform, time transform, and regression all on-the-fly
 // Uses algebraic identity: SS_res = SS_y - b² * SS_t (no residual storage!)
-static double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
+double co_tstat_fused(const arma::vec& x, const arma::vec& phi) {
     const int n = x.n_elem;
     const int p = phi.n_elem;
     const int m = (p == 0) ? n : n - p;

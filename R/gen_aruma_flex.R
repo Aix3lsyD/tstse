@@ -143,12 +143,6 @@ gen_aruma_flex <- function(n,
     innov_type <- "Custom"
   }
 
-  # Build model list for arima.sim
-  # Note: arima.sim uses opposite sign convention for MA
-  model <- list(order = c(p, as.integer(d), q))
-  if (p > 0) model$ar <- phi
-  if (q > 0) model$ma <- -theta
-
   # Calculate total nonstationary order from lambda and seasonal
   dlams <- dlam + s
 
@@ -163,15 +157,9 @@ gen_aruma_flex <- function(n,
   total_innov <- n_sim + n_start
   all_innov <- innov_gen(total_innov)
 
-  # Use arima.sim with custom innovations
-  tsdata <- arima.sim(
-    n = n_sim,
-    model = model,
-    innov = all_innov[(n_start + 1):total_innov],
-    n.start = n_start,
-    start.innov = all_innov[1:n_start]
-  )
-  y <- as.double(tsdata)
+  # C++ ARMA filter (replaces arima.sim)
+  # theta in package convention (textbook sign); C++ negates internally
+  y <- arma_filter_cpp(all_innov, phi, theta, n_sim, n_start, as.integer(d))
 
   # Build combined nonstationary operator from lambda and seasonal
   lambdas <- .build_nonstationary_operator(lambda, s, dlam)

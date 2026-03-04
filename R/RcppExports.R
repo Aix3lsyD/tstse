@@ -217,6 +217,49 @@ gen_ar_seeded_cpp <- function(n, phi, vara, rng_seed) {
     .Call(`_tstse_gen_ar_seeded_cpp`, n, phi, vara, rng_seed)
 }
 
+#' C++ ARMA Filter (replaces arima.sim in gen_aruma_flex)
+#'
+#' Applies MA convolution, AR recursion, burn-in trimming, and inverse
+#' differencing to a vector of pre-generated innovations. Produces output
+#' identical to arima.sim() for the same inputs.
+#'
+#' @param innovations Numeric vector of length n + n_start (burn-in + main).
+#' @param phi Numeric vector of AR coefficients (package convention).
+#' @param theta Numeric vector of MA coefficients (package/textbook convention;
+#'   negated internally to match arima.sim's "+" convention).
+#' @param n Integer, desired output length (before differencing).
+#' @param n_start Integer, burn-in length.
+#' @param d Integer, differencing order (0 = none).
+#' @return Numeric vector of length n (if d=0) or n+d (if d>0).
+#' @keywords internal
+#' @noRd
+arma_filter_cpp <- function(innovations, phi, theta, n, n_start, d) {
+    .Call(`_tstse_arma_filter_cpp`, innovations, phi, theta, n, n_start, d)
+}
+
+#' Profile Bootstrap Kernel Sub-Components
+#'
+#' Runs bootstrap iterations sequentially with timing around each sub-operation
+#' to produce a sub-component breakdown of the bootstrap kernel. Used by the
+#' Shiny Performance Profile tab for parent-child visualization.
+#'
+#' @param n Integer, series length.
+#' @param phi Numeric vector, AR coefficients from null model.
+#' @param vara Double, innovation variance from null model.
+#' @param seeds Vector of uint64 seeds (determines number of iterations).
+#' @param maxp Integer, maximum AR order for CO test.
+#' @param criterion String, IC for AR selection: "aic", "aicc", "bic".
+#' @param min_p Integer, minimum AR order for CO residual model (default 0).
+#' @param coba Logical, whether to also time COBA's second Burg fit.
+#' @return List with mean microseconds per sub-component:
+#'   gen_ar_us, ols_us, burg_us, co_fused_us, burg_coba_us (0 if !coba),
+#'   total_iter_us, nreps.
+#' @keywords internal
+#' @noRd
+wbg_profile_kernel_components_cpp <- function(n, phi, vara, seeds, maxp, criterion, min_p, coba) {
+    .Call(`_tstse_wbg_profile_kernel_components_cpp`, n, phi, vara, seeds, maxp, criterion, min_p, coba)
+}
+
 #' WBG Bootstrap Kernel (C++ Implementation)
 #'
 #' Runs the bootstrap loop in parallel using TBB with configurable grain size.

@@ -2,10 +2,8 @@
 # Interactive Shiny app for exploring DuckDB-stored bootstrap rejection rates
 #
 # Module files in R/ are auto-sourced by shiny::loadSupport():
-#   utils.R, mod_overview.R, mod_rejection_rates.R, mod_plots.R,
-#   mod_pvalue.R, mod_bootstrap_dist.R, mod_analysis_grids.R,
-#   mod_parallel_coords.R, mod_diagnostics.R, mod_innovation_comp.R,
-#   mod_adhoc_sim.R, mod_benchmark.R
+#   utils.R, mod_capstone.R (+ mod_capstone_*.R sub-tabs),
+#   mod_innovation_comp.R, mod_benchmark.R, mod_adhoc_sim.R
 
 library(shiny)
 library(bslib)
@@ -16,17 +14,6 @@ library(DBI)
 library(ggplot2)
 
 # thematic_shiny() is called inside the server function so it can access session
-
-# Check if a database is available before building UI
-.has_db <- local({
-  db_path <- getOption("tstse.viewer_db")
-  !is.null(db_path) && nzchar(db_path) && file.exists(db_path)
-})
-
-# Tab names that require a database connection
-.DB_TAB_NAMES <- c("Database Overview", "Rejection Rates", "Plots",
-                    "P-value Diagnostics", "Bootstrap Distribution",
-                    "Analysis Grids", "Parallel Coordinates", "Diagnostics")
 
 # =============================================================================
 # UI
@@ -52,25 +39,7 @@ ui <- page_fluid(
         background-color: #6c2022 !important;
         color: #f8d7da !important;
       }
-      /* Disabled tab styling */
-      .nav-tabs .nav-link.tab-disabled {
-        color: var(--bs-secondary-color) !important;
-        opacity: 0.45;
-        cursor: not-allowed;
-        pointer-events: none;
-      }
-    ')),
-    # Disable DB-dependent tabs on page load when no database
-    if (!.has_db) tags$script(HTML(paste0("
-      $(function() {
-        var dbTabs = ['", paste(.DB_TAB_NAMES, collapse = "','"), "'];
-        $('#main_tabs .nav-link').each(function() {
-          if (dbTabs.indexOf($(this).text().trim()) !== -1) {
-            $(this).addClass('tab-disabled');
-          }
-        });
-      });
-    ")))
+    '))
   ),
 
   div(
@@ -78,21 +47,13 @@ ui <- page_fluid(
     h2("Monte Carlo Simulation Viewer", style = "margin: 0;"),
     div(
       class = "d-flex align-items-center gap-3",
-      if (!.has_db) span(class = "badge bg-warning text-dark", "No database connected"),
       input_dark_mode(id = "dark_mode", mode = "dark")
     )
   ),
 
   tabsetPanel(
     id = "main_tabs",
-    mod_overview_ui("overview"),
-    mod_rejection_rates_ui("rr"),
-    mod_plots_ui("plots"),
-    mod_pvalue_ui("pval"),
-    mod_bootstrap_dist_ui("bootdist"),
-    mod_analysis_grids_ui("grids"),
-    mod_parallel_coords_ui("parcoord"),
-    mod_diagnostics_ui("diag"),
+    mod_capstone_ui("cap"),
     mod_innovation_comp_ui("innovcomp"),
     mod_benchmark_ui("bench"),
     mod_adhoc_sim_ui("adhoc")
@@ -106,7 +67,7 @@ ui <- page_fluid(
 server <- function(input, output, session) {
   thematic_shiny()
 
-  # Database connection (NULL if no db_path provided)
+  # Database connection (read-only, NULL if no db_path provided)
   db_path <- getOption("tstse.viewer_db")
   has_db <- !is.null(db_path) && nzchar(db_path) && file.exists(db_path)
 
@@ -117,8 +78,13 @@ server <- function(input, output, session) {
     con <- NULL
   }
 
-  # Populate initial filter choices (shared across modules)
-  init_choices <- if (has_db) {
+  # Trigger to refresh data after DB writes (capstone/ad-hoc modules)
+  db_refresh_trigger <- reactiveVal(0L)
+
+  # Populate filter choices (shared across modules)
+  init_choices <- reactive({
+    db_refresh_trigger()
+    if (!has_db) return(list(n = character(0), phi = character(0), innov = character(0)))
     tryCatch({
       n_vals <- dbGetQuery(con, "SELECT DISTINCT n FROM simulations ORDER BY n")
       phi_vals <- dbGetQuery(con, "SELECT DISTINCT phi FROM simulations ORDER BY phi")
@@ -129,34 +95,14 @@ server <- function(input, output, session) {
         innov = innov_vals$innov_dist
       )
     }, error = function(e) list(n = character(0), phi = character(0), innov = character(0)))
-  } else {
-    list(n = character(0), phi = character(0), innov = character(0))
-  }
+  })
 
   # Reactive values shared across modules
   rv <- reactiveValues()
   observe({ rv$dark_mode <- input$dark_mode })
 
-  # Select Ad-Hoc Simulation tab when no DB is connected
-  if (!has_db) {
-    updateTabsetPanel(session, "main_tabs", selected = "Ad-Hoc Simulation")
-  }
-
   # --- Module servers ---
-
-  # DB-dependent modules: only initialize when we have a connection
-  if (has_db) {
-    mod_overview_server("overview", con)
-    mod_rejection_rates_server("rr", con, init_choices)
-    mod_plots_server("plots", con, init_choices)
-    mod_pvalue_server("pval", con, init_choices)
-    mod_bootstrap_dist_server("bootdist", con)
-    mod_analysis_grids_server("grids", con, init_choices)
-    mod_parallel_coords_server("parcoord", con, init_choices)
-    mod_diagnostics_server("diag", con, init_choices)
-  }
-
-  # DB-independent modules: always initialize
+  mod_capstone_server("cap", con, db_path, db_refresh_trigger, init_choices)
   mod_innovation_comp_server("innovcomp", con, init_choices)
   mod_benchmark_server("bench", con)
   mod_adhoc_sim_server("adhoc", con, db_path)

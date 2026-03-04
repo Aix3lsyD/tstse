@@ -97,15 +97,12 @@ make_gen_t <- function(df, scale = FALSE) {
     scale <- FALSE
   }
 
+  scale_factor <- if (scale) sqrt((df - 2) / df) else 1
   force(df)
-  force(scale)
+  force(scale_factor)
 
   function(n) {
-    x <- rt(n, df = df)
-    if (scale && df > 2) {
-      x <- x * sqrt((df - 2) / df)
-    }
-    x
+    rt(n, df = df) * scale_factor
   }
 }
 
@@ -238,10 +235,6 @@ make_gen_skt <- function(df, alpha = 0, scale = FALSE) {
 
   # Return generator function
   function(n) {
-    if (!is.numeric(n) || length(n) != 1L || n < 1) {
-      stop("n must be a positive integer")
-    }
-
     # Generate raw skew-t variates
     # sn::rst uses (xi, omega, alpha, nu) parameterization
     # xi = location (0), omega = scale (1), alpha = slant, nu = df
@@ -651,20 +644,15 @@ make_gen_garch <- function(omega,
     fixed <- c(fixed, unlist(distribution_params))
   }
 
-  force(model)
-  force(distribution)
-  force(q)
-  force(p)
-  force(fixed)
+  spec <- rugarch::ugarchspec(
+    variance.model = list(model = model, garchOrder = c(q, p)),
+    mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+    distribution.model = distribution,
+    fixed.pars = as.list(fixed)
+  )
+  force(spec)
 
   function(n) {
-    spec <- rugarch::ugarchspec(
-      variance.model = list(model = model, garchOrder = c(q, p)),
-      mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
-      distribution.model = distribution,
-      fixed.pars = as.list(fixed)
-    )
-
     path <- rugarch::ugarchpath(spec, n.sim = n)
     as.numeric(path@path$seriesSim)
   }
