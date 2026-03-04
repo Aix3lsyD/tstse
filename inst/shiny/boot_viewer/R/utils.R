@@ -76,97 +76,6 @@ viewer_plot_theme <- function(base_size = 14, session = shiny::getDefaultReactiv
     )
 }
 
-# Build parameterized SQL query with optional filters
-build_query <- function(view_name, n_vals = NULL, phi_vals = NULL, innov_vals = NULL) {
-  sql <- paste0("SELECT * FROM ", view_name, " WHERE 1=1")
-  params <- list()
-
-  if (length(n_vals) > 0) {
-    placeholders <- paste(rep("?", length(n_vals)), collapse = ", ")
-    sql <- paste0(sql, " AND n IN (", placeholders, ")")
-    params <- c(params, as.list(as.integer(n_vals)))
-  }
-  if (length(phi_vals) > 0) {
-    placeholders <- paste(rep("?", length(phi_vals)), collapse = ", ")
-    sql <- paste0(sql, " AND phi IN (", placeholders, ")")
-    params <- c(params, as.list(as.numeric(phi_vals)))
-  }
-  if (length(innov_vals) > 0) {
-    placeholders <- paste(rep("?", length(innov_vals)), collapse = ", ")
-    sql <- paste0(sql, " AND innov_dist IN (", placeholders, ")")
-    params <- c(params, as.list(innov_vals))
-  }
-
-  sql <- paste0(sql, " ORDER BY innov_dist, n, phi")
-  list(sql = sql, params = params)
-}
-
-# Query grid data with optional single-value filters
-grid_query <- function(con, innov_dist = NULL, phi = NULL, n = NULL,
-                       order_col = "n", batch_id = NULL) {
-  if (!is.null(batch_id) && batch_id != "all") {
-    sql <- "SELECT * FROM v_rejection_rates_by_batch WHERE 1=1"
-  } else {
-    sql <- "SELECT * FROM v_rejection_rates WHERE 1=1"
-  }
-  params <- list()
-
-  if (!is.null(batch_id) && batch_id != "all") {
-    sql <- paste0(sql, " AND batch_id = ?")
-    params <- c(params, list(as.integer(batch_id)))
-  }
-  if (!is.null(innov_dist)) {
-    sql <- paste0(sql, " AND innov_dist = ?")
-    params <- c(params, list(innov_dist))
-  }
-  if (!is.null(phi)) {
-    sql <- paste0(sql, " AND phi = ?")
-    params <- c(params, list(as.numeric(phi)))
-  }
-  if (!is.null(n)) {
-    sql <- paste0(sql, " AND n = ?")
-    params <- c(params, list(as.integer(n)))
-  }
-
-  sql <- paste0(sql, " ORDER BY ", order_col)
-  tryCatch(
-    dbGetQuery(con, sql, params = params),
-    error = function(e) data.frame()
-  )
-}
-
-# Get batch choices matching a config filter
-grid_batch_choices <- function(con, innov_dist = NULL, phi = NULL, n = NULL) {
-  sql <- paste0(
-    "SELECT DISTINCT b.batch_id, b.label ",
-    "FROM simulations s JOIN batches b ON s.batch_id = b.batch_id WHERE 1=1"
-  )
-  params <- list()
-  if (!is.null(innov_dist)) {
-    sql <- paste0(sql, " AND s.innov_dist = ?")
-    params <- c(params, list(innov_dist))
-  }
-  if (!is.null(phi)) {
-    sql <- paste0(sql, " AND s.phi = ?")
-    params <- c(params, list(as.numeric(phi)))
-  }
-  if (!is.null(n)) {
-    sql <- paste0(sql, " AND s.n = ?")
-    params <- c(params, list(as.integer(n)))
-  }
-  sql <- paste0(sql, " ORDER BY b.batch_id")
-  batches <- tryCatch(dbGetQuery(con, sql, params = params),
-                      error = function(e) data.frame())
-  if (nrow(batches) == 0) return(c("All (Pooled)" = "all"))
-  choices <- setNames(
-    as.character(batches$batch_id),
-    ifelse(is.na(batches$label) | batches$label == "",
-           paste("Batch", batches$batch_id),
-           paste0("Batch ", batches$batch_id, ": ", batches$label))
-  )
-  c("All (Pooled)" = "all", choices)
-}
-
 # Format a grid data frame as an interactive DT with color-coded rate columns
 format_grid_dt <- function(df, row_label_col, row_label_name) {
   if (nrow(df) == 0) {
@@ -293,18 +202,18 @@ build_innov_dist_str <- function(label, params = list()) {
 # Build innov_gen function from distribution label + params list.
 # params uses generic keys (no "sim_" prefix).
 # Returns a function(n) -> numeric(n) innovation generator.
-build_innov_gen <- function(label, params = list()) {
+build_innov_gen <- function(label, params = list(), use_fast = FALSE) {
   switch(label,
     "Normal" = {
       sd_val <- params$norm_sd
       if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-      make_gen_norm(sd = sd_val)
+      if (isTRUE(use_fast)) make_gen_norm_fast(sd = sd_val) else make_gen_norm(sd = sd_val)
     },
     "Student's t" = {
       df_val <- params$t_df
       if (is.null(df_val) || is.na(df_val) || df_val < 1) df_val <- 3
       scale_val <- isTRUE(params$t_scale)
-      make_gen_t(df = df_val, scale = scale_val)
+      if (isTRUE(use_fast)) make_gen_t_fast(df = df_val, scale = scale_val) else make_gen_t(df = df_val, scale = scale_val)
     },
     "Skew-t" = {
       df_val <- params$skt_df
@@ -312,24 +221,24 @@ build_innov_gen <- function(label, params = list()) {
       alpha_val <- params$skt_alpha
       if (is.null(alpha_val) || is.na(alpha_val)) alpha_val <- 0
       scale_val <- isTRUE(params$skt_scale)
-      make_gen_skt(df = df_val, alpha = alpha_val, scale = scale_val)
+      if (isTRUE(use_fast)) make_gen_skt_fast(df = df_val, alpha = alpha_val, scale = scale_val) else make_gen_skt(df = df_val, alpha = alpha_val, scale = scale_val)
     },
     "GED" = {
       nu_val <- params$ged_nu
       if (is.null(nu_val) || is.na(nu_val) || nu_val <= 0) nu_val <- 2
       sd_val <- params$ged_sd
       if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
-      make_gen_ged(nu = nu_val, sd = sd_val)
+      if (isTRUE(use_fast)) make_gen_ged_fast(nu = nu_val, sd = sd_val) else make_gen_ged(nu = nu_val, sd = sd_val)
     },
     "Laplace" = {
       sc <- params$lap_scale
       if (is.null(sc) || is.na(sc) || sc <= 0) sc <- 1 / sqrt(2)
-      make_gen_laplace(scale = sc)
+      if (isTRUE(use_fast)) make_gen_laplace_fast(scale = sc) else make_gen_laplace(scale = sc)
     },
     "Uniform" = {
       hw <- params$unif_hw
       if (is.null(hw) || is.na(hw) || hw <= 0) hw <- sqrt(3)
-      make_gen_unif(half_width = hw)
+      if (isTRUE(use_fast)) make_gen_unif_fast(half_width = hw) else make_gen_unif(half_width = hw)
     },
     "Mixture Normal" = {
       sd1 <- params$mix_sd1
@@ -338,7 +247,7 @@ build_innov_gen <- function(label, params = list()) {
       if (is.null(sd1) || is.na(sd1) || sd1 <= 0) sd1 <- 1
       if (is.null(sd2) || is.na(sd2) || sd2 <= 0) sd2 <- 3
       if (is.null(p1) || is.na(p1) || p1 <= 0 || p1 >= 1) p1 <- 0.9
-      make_gen_mixnorm(sd1 = sd1, sd2 = sd2, prob1 = p1)
+      if (isTRUE(use_fast)) make_gen_mixnorm_fast(sd1 = sd1, sd2 = sd2, prob1 = p1) else make_gen_mixnorm(sd1 = sd1, sd2 = sd2, prob1 = p1)
     },
     "GARCH" = {
       omega <- params$garch_omega
@@ -362,12 +271,21 @@ build_innov_gen <- function(label, params = list()) {
           if (!is.null(beta) && (any(is.na(beta)) || length(beta) == 0)) beta <- NULL
         }
       }
-      make_gen_garch(omega = omega, alpha = alpha, beta = beta)
+      if (isTRUE(use_fast)) {
+        if (is.null(beta)) beta <- numeric(0)
+        make_gen_garch_fast(omega = omega, alpha = alpha, beta = beta)
+      } else {
+        make_gen_garch(omega = omega, alpha = alpha, beta = beta)
+      }
     },
     "Heteroscedastic" = {
       # Support legacy w interface (vector or function)
       if (!is.null(params$hetero_w)) {
-        make_gen_hetero(w = params$hetero_w, sd = params$hetero_sd %||% 1)
+        if (isTRUE(use_fast)) {
+          make_gen_hetero_fast(w = params$hetero_w, sd = params$hetero_sd %||% 1)
+        } else {
+          make_gen_hetero(w = params$hetero_w, sd = params$hetero_sd %||% 1)
+        }
       } else {
         # Shape interface
         sd_val <- params$hetero_sd
@@ -377,14 +295,23 @@ build_innov_gen <- function(label, params = list()) {
           "linear" =, "sqrt" =, "log" =, "exp" = {
             from_val <- params$hetero_from %||% 1
             to_val <- params$hetero_to %||% 10
-            make_gen_hetero(shape = shape, from = from_val, to = to_val, sd = sd_val)
+            if (isTRUE(use_fast)) {
+              make_gen_hetero_fast(shape = shape, from = from_val, to = to_val, sd = sd_val)
+            } else {
+              make_gen_hetero(shape = shape, from = from_val, to = to_val, sd = sd_val)
+            }
           },
           "power" = {
             from_val <- params$hetero_from %||% 1
             to_val <- params$hetero_to %||% 10
             p_val <- params$hetero_power %||% 2
-            make_gen_hetero(shape = "power", from = from_val, to = to_val,
-                            power = p_val, sd = sd_val)
+            if (isTRUE(use_fast)) {
+              make_gen_hetero_fast(shape = "power", from = from_val, to = to_val,
+                                   power = p_val, sd = sd_val)
+            } else {
+              make_gen_hetero(shape = "power", from = from_val, to = to_val,
+                              power = p_val, sd = sd_val)
+            }
           },
           "step" = {
             breaks_str <- params$hetero_breaks %||% "0.5"
@@ -397,14 +324,23 @@ build_innov_gen <- function(label, params = list()) {
             } else lvl <- levels_str
             if (any(is.na(brk))) brk <- 0.5
             if (any(is.na(lvl))) lvl <- c(1, 5)
-            make_gen_hetero(shape = "step", breaks = brk, levels = lvl, sd = sd_val)
+            if (isTRUE(use_fast)) {
+              make_gen_hetero_fast(shape = "step", breaks = brk, levels = lvl, sd = sd_val)
+            } else {
+              make_gen_hetero(shape = "step", breaks = brk, levels = lvl, sd = sd_val)
+            }
           },
           "periodic" = {
             bw <- params$hetero_base_w %||% 1
             amp <- params$hetero_amplitude %||% 0.5
             per <- params$hetero_period %||% 12
-            make_gen_hetero(shape = "periodic", base_w = bw, amplitude = amp,
-                            period = per, sd = sd_val)
+            if (isTRUE(use_fast)) {
+              make_gen_hetero_fast(shape = "periodic", base_w = bw, amplitude = amp,
+                                   period = per, sd = sd_val)
+            } else {
+              make_gen_hetero(shape = "periodic", base_w = bw, amplitude = amp,
+                              period = per, sd = sd_val)
+            }
           }
         )
       }
@@ -1249,8 +1185,9 @@ plot_null_model_diagnostics <- function(results, nsims, maxp, min_p = 1L,
 
   # Panel 1: AR Order Distribution
   order_tbl <- table(factor(ar_orders, levels = 0:maxp))
-  order_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
-  graphics::barplot(order_tbl, col = order_cols[seq_len(maxp + 1)], border = NA,
+  base_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
+  order_cols <- grDevices::colorRampPalette(base_cols)(maxp + 1)
+  graphics::barplot(order_tbl, col = order_cols, border = NA,
                     main = sprintf("Fitted Null AR Order  (n=%d sims, min_p=%d, maxp=%d)",
                                    nsims, min_p, maxp),
                     xlab = "AR Order", ylab = "Count")

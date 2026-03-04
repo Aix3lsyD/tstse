@@ -53,6 +53,7 @@
   criterion <- params$criterion
   bootadj   <- params$bootadj
   min_p     <- params$min_p
+  use_fast  <- isTRUE(params$use_fast)
   n_cells   <- nrow(grid)
 
   all_rates <- vector("list", n_cells)
@@ -80,7 +81,7 @@
       vara <- 1 - phi_val^2
     } else {
       innov_gen <- tryCatch(
-        build_innov_gen(innov_label, innov_params),
+        build_innov_gen(innov_label, innov_params, use_fast = use_fast),
         error = function(e) NULL)
       if (is.null(innov_gen)) {
         if (!is.null(session)) shiny::incProgress(1 / n_cells)
@@ -147,19 +148,22 @@
 
 mod_capstone_replication_ui <- function(ns) {
   tabPanel("Replication Comparison",
-    br(),
-    h4("Replication Comparison"),
-    uiOutput(ns("repl_status")),
-    # Seed comparison controls (only shown when no published preset)
-    uiOutput(ns("seed_comp_controls")),
-    wellPanel(
-      h5("Forest Plot"),
-      plotOutput(ns("repl_forest"), height = "450px")
-    ),
-    wellPanel(
-      h5("Comparison Table"),
-      uiOutput(ns("repl_table_caption")),
-      DTOutput(ns("repl_table"))
+    div(id = ns("repl_content"),
+      br(),
+      h4("Replication Comparison"),
+      uiOutput(ns("repl_status")),
+      # Seed comparison controls (only shown when no published preset)
+      uiOutput(ns("seed_comp_controls")),
+      uiOutput(ns("repl_innov_filter_ui")),
+      wellPanel(
+        h5("Forest Plot"),
+        plotOutput(ns("repl_forest"), height = "550px")
+      ),
+      wellPanel(
+        h5("Comparison Table"),
+        uiOutput(ns("repl_table_caption")),
+        DTOutput(ns("repl_table"))
+      )
     )
   )
 }
@@ -173,6 +177,19 @@ mod_capstone_replication_server <- function(input, output, session,
                                             test_params) {
 
   ns <- session$ns
+  has_waiter <- requireNamespace("waiter", quietly = TRUE)
+
+  .with_repl_waiter <- function(expr) {
+    if (!has_waiter) return(force(expr))
+    w <- waiter::Waiter$new(
+      id = ns("repl_content"),
+      html = waiter::spin_fading_circles(),
+      color = "rgba(0, 0, 0, 0.25)"
+    )
+    w$show()
+    on.exit(w$hide(), add = TRUE)
+    force(expr)
+  }
 
   # Which replication preset (if any) is active?
   repl_info <- reactive({
@@ -199,9 +216,213 @@ mod_capstone_replication_server <- function(input, output, session,
 
   comp_results_rv <- reactiveVal(NULL)
   comp_seed_used  <- reactiveVal(NULL)
+  comp_state <- new.env(parent = emptyenv())
+  comp_state$active <- FALSE
+  comp_state$cancel_requested <- FALSE
+  comp_state$ctx <- NULL
+  comp_state$toast_id <- NULL
+
+  .repl_toast_ui <- function(ctx, detail = NULL) {
+    n_cells <- max(1L, as.integer(ctx$n_cells))
+    done <- max(0L, min(n_cells, as.integer(ctx$cell_idx) - 1L))
+    pct <- round(100 * done / n_cells)
+    status_line <- sprintf("Running seed comparison... Cell %d/%d", min(as.integer(ctx$cell_idx), n_cells), n_cells)
+    if (isTRUE(comp_state$cancel_requested)) {
+      status_line <- paste0(status_line, " (stop requested)")
+    }
+    if (is.null(detail) || !nzchar(detail)) detail <- ""
+
+    tags$div(
+      style = "min-width: 320px;",
+      tags$div(class = "progress", style = "height: 8px; margin-bottom: 8px;",
+               tags$div(class = "progress-bar bg-info",
+                        role = "progressbar",
+                        style = sprintf("width: %d%%;", pct),
+                        `aria-valuenow` = pct, `aria-valuemin` = "0", `aria-valuemax` = "100")),
+      tags$div(tags$strong(status_line)),
+      if (nzchar(detail)) tags$div(class = "text-muted", style = "font-size: 0.9em;", detail)
+    )
+  }
+
+  .show_repl_toast <- function(detail = NULL) {
+    if (!isTRUE(comp_state$active) || is.null(comp_state$ctx)) return(invisible(NULL))
+    if (is.null(comp_state$toast_id)) comp_state$toast_id <- paste0(ns("comp_progress"), "_toast")
+
+    showNotification(
+      ui = .repl_toast_ui(comp_state$ctx, detail = detail),
+      id = comp_state$toast_id,
+      duration = NULL,
+      closeButton = FALSE,
+      type = "message",
+      action = actionLink(
+        inputId = ns("cancel_comp_toast"),
+        label = icon("ban"),
+        style = "padding: 0; color: var(--bs-warning); text-decoration: none;"
+      ),
+      session = session
+    )
+    invisible(NULL)
+  }
+
+  .clear_repl_toast <- function() {
+    if (!is.null(comp_state$toast_id)) {
+      try(removeNotification(comp_state$toast_id, session = session), silent = TRUE)
+    }
+    comp_state$toast_id <- NULL
+  }
+
+  .finalize_comp_run <- function(cancelled = FALSE) {
+    if (!is.null(comp_state$ctx)) {
+      results_df <- do.call(rbind, Filter(Negate(is.null), comp_state$ctx$all_rates))
+      if (!is.null(results_df) && nrow(results_df) > 0) {
+        comp_results_rv(results_df)
+        comp_seed_used(comp_state$ctx$comp_seed)
+      }
+      if (isTRUE(cancelled)) {
+        showNotification(
+          sprintf("Comparison cancelled after %d/%d cells", comp_state$ctx$cells_done, comp_state$ctx$n_cells),
+          type = "warning", duration = 5
+        )
+      } else {
+        n_out <- if (is.null(results_df) || nrow(results_df) == 0) 0L else nrow(results_df)
+        showNotification(
+          sprintf("Comparison complete: %d cells with seed %d", n_out, comp_state$ctx$comp_seed),
+          type = "message", duration = 6
+        )
+      }
+    }
+
+    .clear_repl_toast()
+    comp_state$active <- FALSE
+    comp_state$cancel_requested <- FALSE
+    comp_state$ctx <- NULL
+    invisible(NULL)
+  }
+
+  .schedule_comp_next <- function() {
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        tryCatch(
+          .run_comp_next_cell(),
+          error = function(e) {
+            .clear_repl_toast()
+            comp_state$active <- FALSE
+            comp_state$cancel_requested <- FALSE
+            comp_state$ctx <- NULL
+            showNotification(paste("Comparison run failed:", e$message), type = "error", duration = 8)
+          }
+        )
+      })
+    }, delay = 0)
+  }
+
+  .run_comp_next_cell <- function() {
+    if (!isTRUE(comp_state$active) || is.null(comp_state$ctx)) return(invisible(NULL))
+    ctx <- comp_state$ctx
+
+    if (isTRUE(comp_state$cancel_requested)) {
+      .finalize_comp_run(cancelled = TRUE)
+      return(invisible(NULL))
+    }
+
+    if (ctx$cell_idx > ctx$n_cells) {
+      .finalize_comp_run(cancelled = FALSE)
+      return(invisible(NULL))
+    }
+
+    row_i <- ctx$cell_idx
+    phi_val        <- ctx$grid$phi[row_i]
+    n_val          <- as.integer(ctx$grid$n[row_i])
+    innov_label    <- ctx$grid$innov_label[row_i]
+    innov_dist_str <- ctx$grid$innov_dist_str[row_i]
+    innov_params   <- if (!is.null(ctx$grid$innov_params)) ctx$grid$innov_params[[row_i]] else list()
+
+    .show_repl_toast(detail = sprintf("phi=%.2f, n=%d, %s", phi_val, n_val, innov_dist_str))
+
+    use_vara <- FALSE
+    vara <- NULL
+    innov_gen <- NULL
+
+    if (innov_label == "Normal" && length(innov_params) == 0) {
+      use_vara <- TRUE
+      vara <- 1 - phi_val^2
+    } else {
+      innov_gen <- tryCatch(
+        build_innov_gen(innov_label, innov_params, use_fast = ctx$use_fast),
+        error = function(e) NULL
+      )
+      if (is.null(innov_gen)) {
+        ctx$cell_idx <- ctx$cell_idx + 1L
+        ctx$cells_done <- ctx$cells_done + 1L
+        comp_state$ctx <- ctx
+        .show_repl_toast()
+        .schedule_comp_next()
+        return(invisible(NULL))
+      }
+    }
+
+    if (!is.null(ctx$comp_seed) && !is.na(ctx$comp_seed)) {
+      set.seed(as.integer(ctx$comp_seed) * 10000L + row_i)
+    }
+
+    results_list <- vector("list", ctx$nsims)
+    for (i in seq_len(ctx$nsims)) {
+      y <- tryCatch({
+        if (use_vara) {
+          gen_aruma_flex(n_val, phi = phi_val, vara = vara, plot = FALSE)$y
+        } else {
+          gen_aruma_flex(n_val, phi = phi_val, innov_gen = innov_gen, plot = FALSE)$y
+        }
+      }, error = function(e) NULL)
+      if (is.null(y)) next
+
+      results_list[[i]] <- tryCatch(
+        wbg_boot_fast(y, nb = ctx$nb, maxp = ctx$maxp, criterion = ctx$criterion,
+                      bootadj = ctx$bootadj, min_p = ctx$min_p),
+        error = function(e) NULL
+      )
+    }
+
+    results_list <- Filter(Negate(is.null), results_list)
+    if (length(results_list) > 0) {
+      pvals      <- vapply(results_list, function(r) r$pvalue, numeric(1))
+      pvals_asym <- vapply(results_list, function(r) r$pvalue_asymp, numeric(1))
+      pvals_adj  <- vapply(results_list, function(r) if (is.null(r$pvalue_adj)) NA_real_ else r$pvalue_adj, numeric(1))
+      n_ok <- length(results_list)
+      .bse <- function(p, nn) sqrt(p * (1 - p) / nn)
+
+      rej_05      <- mean(pvals < 0.05, na.rm = TRUE)
+      rej_asym_05 <- mean(pvals_asym < 0.05, na.rm = TRUE)
+      rej_adj_05  <- mean(pvals_adj < 0.05, na.rm = TRUE)
+
+      ctx$all_rates[[row_i]] <- data.frame(
+        n = n_val, phi = phi_val,
+        innov_dist = innov_dist_str, innov_label = innov_label,
+        n_sims = n_ok,
+        reject_05 = rej_05, reject_05_se = .bse(rej_05, n_ok),
+        reject_asymp_05 = rej_asym_05, reject_asymp_05_se = .bse(rej_asym_05, n_ok),
+        reject_adj_05 = rej_adj_05, reject_adj_05_se = .bse(rej_adj_05, n_ok),
+        stringsAsFactors = FALSE
+      )
+    }
+
+    ctx$cell_idx <- ctx$cell_idx + 1L
+    ctx$cells_done <- ctx$cells_done + 1L
+    comp_state$ctx <- ctx
+    .show_repl_toast()
+    .schedule_comp_next()
+    invisible(NULL)
+  }
 
   # Reset comparison results when preset changes
-  observeEvent(preset_name(), { comp_results_rv(NULL); comp_seed_used(NULL) })
+  observeEvent(preset_name(), {
+    if (isTRUE(comp_state$active)) {
+      comp_state$cancel_requested <- TRUE
+    }
+    .clear_repl_toast()
+    comp_results_rv(NULL)
+    comp_seed_used(NULL)
+  })
 
   seed_comp_merged <- reactive({
     ours   <- cap_combined_results()
@@ -212,6 +433,86 @@ mod_capstone_replication_server <- function(input, output, session,
                     suffixes = c("_a", "_b"))
     if (nrow(merged) == 0) return(NULL)
     merged
+  })
+
+  .innov_col <- function(df) {
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    if ("innov_label_a" %in% names(df)) return("innov_label_a")
+    if ("innov_label" %in% names(df)) return("innov_label")
+    if ("innov_dist" %in% names(df)) return("innov_dist")
+    NULL
+  }
+
+  .innov_values <- function(df) {
+    col <- .innov_col(df)
+    if (is.null(col)) return(character(0))
+    vals <- unique(as.character(df[[col]]))
+    vals <- vals[!is.na(vals) & nzchar(vals)]
+    sort(vals)
+  }
+
+  output$repl_innov_filter_ui <- renderUI({
+    info <- repl_info()
+    data_for_choices <- if (!is.null(info)) repl_merged() else seed_comp_merged()
+    innov_vals <- .innov_values(data_for_choices)
+    if (length(innov_vals) == 0) return(NULL)
+
+    wellPanel(class = "plot-controls",
+      fluidRow(
+        column(8,
+          selectizeInput(
+            ns("repl_innov_filter"), "Innovation Filter",
+            choices = character(0),
+            selected = NULL,
+            multiple = FALSE,
+            options = list(placeholder = "Select an innovation type")
+          )
+        )
+      )
+    )
+  })
+
+  observeEvent({
+    info <- repl_info()
+    data_for_choices <- if (!is.null(info)) repl_merged() else seed_comp_merged()
+    paste(.innov_values(data_for_choices), collapse = "|")
+  }, {
+    info <- repl_info()
+    data_for_choices <- if (!is.null(info)) repl_merged() else seed_comp_merged()
+    innov_vals <- .innov_values(data_for_choices)
+    if (length(innov_vals) == 0) return()
+
+    current <- as.character(input$repl_innov_filter %||% "")
+    selected <- if (nzchar(current) && current %in% innov_vals) current else innov_vals[1]
+
+    freezeReactiveValue(input, "repl_innov_filter")
+    updateSelectizeInput(
+      session, "repl_innov_filter",
+      choices = innov_vals,
+      selected = selected,
+      server = TRUE
+    )
+  }, ignoreInit = FALSE)
+
+  .filter_by_innov <- function(df) {
+    if (is.null(df) || nrow(df) == 0) return(df)
+    col <- .innov_col(df)
+    if (is.null(col)) return(df)
+
+    sel <- as.character(input$repl_innov_filter %||% "")
+    if (!nzchar(sel)) return(df)
+
+    out <- df[as.character(df[[col]]) == sel, , drop = FALSE]
+    if (nrow(out) == 0) return(df)
+    out
+  }
+
+  repl_merged_filtered <- reactive({
+    .filter_by_innov(repl_merged())
+  })
+
+  seed_comp_merged_filtered <- reactive({
+    .filter_by_innov(seed_comp_merged())
   })
 
   # Seed comparison controls
@@ -245,6 +546,10 @@ mod_capstone_replication_server <- function(input, output, session,
 
   # Run comparison simulation
   observeEvent(input$run_comp, {
+    if (isTRUE(comp_state$active)) {
+      showNotification("Comparison is already running.", type = "warning", duration = 3)
+      return()
+    }
     grid <- grid_rv()
     if (is.null(grid) || nrow(grid) == 0) {
       showNotification("No grid defined. Load a preset first.", type = "warning")
@@ -257,22 +562,36 @@ mod_capstone_replication_server <- function(input, output, session,
     }
     tp <- test_params()
 
-    withProgress(message = "Running seed comparison...", value = 0, {
-      result <- .run_seed_comparison(grid, tp, base_seed = comp_seed,
-                                     session = session)
-    })
-
-    if (is.null(result) || nrow(result) == 0) {
-      showNotification("Comparison simulation produced no results.", type = "error")
-      return()
-    }
-
-    comp_results_rv(result)
-    comp_seed_used(comp_seed)
-    showNotification(
-      sprintf("Comparison complete: %d cells with seed %d", nrow(result), comp_seed),
-      type = "message", duration = 6)
+    comp_state$ctx <- list(
+      grid = grid,
+      n_cells = nrow(grid),
+      cell_idx = 1L,
+      cells_done = 0L,
+      all_rates = vector("list", nrow(grid)),
+      comp_seed = as.integer(comp_seed),
+      nsims = as.integer(tp$nsims),
+      nb = as.integer(tp$nb),
+      maxp = as.integer(tp$maxp),
+      criterion = tp$criterion,
+      bootadj = isTRUE(tp$bootadj),
+      min_p = as.integer(tp$min_p),
+      use_fast = isTRUE(tp$use_fast)
+    )
+    comp_results_rv(NULL)
+    comp_seed_used(NULL)
+    comp_state$cancel_requested <- FALSE
+    comp_state$active <- TRUE
+    .show_repl_toast()
+    .schedule_comp_next()
   })
+
+  observeEvent(input$cancel_comp_toast, {
+    if (!isTRUE(comp_state$active)) return()
+    comp_state$cancel_requested <- TRUE
+    .show_repl_toast()
+    showNotification("Stop requested. Current scenario will finish first.",
+                     type = "warning", duration = 4)
+  }, ignoreInit = TRUE)
 
   output$comp_status <- renderUI({
     comp <- comp_results_rv()
@@ -360,7 +679,7 @@ mod_capstone_replication_server <- function(input, output, session,
 
     if (!is.null(info)) {
       # ---- Published mode (unchanged) ----
-      merged <- repl_merged()
+      merged <- repl_merged_filtered()
       if (is.null(merged)) {
         return(datatable(data.frame(Message = "No comparison data available."),
                          rownames = FALSE, options = list(dom = "t")))
@@ -429,7 +748,7 @@ mod_capstone_replication_server <- function(input, output, session,
     }
 
     # ---- Seed comparison mode ----
-    merged <- seed_comp_merged()
+    merged <- seed_comp_merged_filtered()
     if (is.null(merged)) {
       return(datatable(data.frame(Message = "No comparison data available."),
                        rownames = FALSE, options = list(dom = "t")))
@@ -512,7 +831,7 @@ mod_capstone_replication_server <- function(input, output, session,
 
     if (!is.null(info)) {
       # ---- Published mode (unchanged) ----
-      merged <- repl_merged()
+      merged <- repl_merged_filtered()
       if (is.null(merged) || all(is.na(merged$reject_05))) {
         plot.new()
         text(0.5, 0.5, "Run the simulation to see comparison",
@@ -532,16 +851,18 @@ mod_capstone_replication_server <- function(input, output, session,
         r <- merged[i, ]
         if (is.na(r$reject_05)) next
         config <- sprintf("n = %d", r$n)
+        innov <- if ("innov_label" %in% names(r)) as.character(r$innov_label) else
+                 if ("innov_dist" %in% names(r)) as.character(r$innov_dist) else ""
         cob_ours_pct <- r$reject_05 * 100
         cob_se <- mc_se_pct(cob_ours_pct, r$n_sims)
 
         forest_rows <- c(forest_rows, list(
           data.frame(phi = r$phi, config = config, method = "COB",
                      source = source_label, rate = r$COB_ref,
-                     se = NA_real_, stringsAsFactors = FALSE),
+                     se = NA_real_, innov = innov, stringsAsFactors = FALSE),
           data.frame(phi = r$phi, config = config, method = "COB",
                      source = "tstse", rate = cob_ours_pct,
-                     se = cob_se, stringsAsFactors = FALSE)
+                     se = cob_se, innov = innov, stringsAsFactors = FALSE)
         ))
 
         if (info$has_coba && !is.na(r$reject_adj_05)) {
@@ -550,10 +871,10 @@ mod_capstone_replication_server <- function(input, output, session,
           forest_rows <- c(forest_rows, list(
             data.frame(phi = r$phi, config = config, method = "COBA",
                        source = source_label, rate = r$COBA_ref,
-                       se = NA_real_, stringsAsFactors = FALSE),
+                       se = NA_real_, innov = innov, stringsAsFactors = FALSE),
             data.frame(phi = r$phi, config = config, method = "COBA",
                        source = "tstse", rate = coba_ours_pct,
-                       se = coba_se, stringsAsFactors = FALSE)
+                       se = coba_se, innov = innov, stringsAsFactors = FALSE)
           ))
         }
       }
@@ -571,13 +892,15 @@ mod_capstone_replication_server <- function(input, output, session,
       config_levels <- sprintf("n = %d", n_vals)
       forest_df$config <- factor(forest_df$config, levels = config_levels)
       forest_df$phi_label <- sprintf("phi[1] == %.2f", forest_df$phi)
+      forest_df$innov <- factor(forest_df$innov)
+      n_innov <- length(unique(forest_df$innov))
 
       p <- ggplot2::ggplot(forest_df,
              ggplot2::aes(x = rate, y = config, shape = source)) +
         ggplot2::geom_vline(xintercept = 5, linetype = "dashed", linewidth = 0.4) +
-        ggplot2::geom_errorbarh(
+        ggplot2::geom_errorbar(
           ggplot2::aes(xmin = rate - 2 * se, xmax = rate + 2 * se),
-          height = 0.25, linewidth = 0.4, na.rm = TRUE,
+          width = 0.25, linewidth = 0.4, na.rm = TRUE, orientation = "y",
           position = ggplot2::position_dodge(width = 0.45)) +
         ggplot2::geom_point(
           ggplot2::aes(fill = source), size = 2.5,
@@ -587,19 +910,28 @@ mod_capstone_replication_server <- function(input, output, session,
         ggplot2::scale_fill_manual(
           values = stats::setNames(c("black", "white"), c("tstse", source_label))) +
         ggplot2::labs(x = "Rejection Rate (%)", y = NULL,
-                      shape = NULL, fill = NULL) +
-        ggplot2::guides(
-          shape = ggplot2::guide_legend(override.aes = list(size = 2.5)),
-          fill  = ggplot2::guide_legend(override.aes = list(size = 2.5)))
+                      shape = NULL, fill = NULL)
 
       if (info$has_coba) {
-        p <- p + ggplot2::facet_grid(method ~ phi_label,
-                                      labeller = ggplot2::label_parsed,
-                                      scales = "free_x")
+        if (n_innov > 1) {
+          p <- p + ggplot2::facet_grid(method + innov ~ phi_label,
+                                        labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                        scales = "free_x")
+        } else {
+          p <- p + ggplot2::facet_grid(method ~ phi_label,
+                                        labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                        scales = "free_x")
+        }
       } else {
-        p <- p + ggplot2::facet_wrap(~ phi_label,
-                                      labeller = ggplot2::label_parsed,
-                                      nrow = 1, scales = "free_x")
+        if (n_innov > 1) {
+          p <- p + ggplot2::facet_grid(innov ~ phi_label,
+                                        labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                        scales = "free_x")
+        } else {
+          p <- p + ggplot2::facet_wrap(~ phi_label,
+                                        labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                        nrow = 1, scales = "free_x")
+        }
       }
 
       p <- p + viewer_plot_theme() +
@@ -615,7 +947,7 @@ mod_capstone_replication_server <- function(input, output, session,
     }
 
     # ---- Seed comparison mode ----
-    merged <- seed_comp_merged()
+    merged <- seed_comp_merged_filtered()
     if (is.null(merged)) {
       plot.new()
       msg <- if (is.null(cap_combined_results()) || nrow(cap_combined_results()) == 0)
@@ -636,11 +968,6 @@ mod_capstone_replication_server <- function(input, output, session,
       label_b <- paste0("Seed ", seed_b)
     }
 
-    mc_se_pct_val <- function(rate, se) {
-      # rate and se are on proportion scale; return pct
-      list(rate_pct = rate * 100, se_pct = se * 100)
-    }
-
     has_coba <- any(!is.na(merged$reject_adj_05_a) & !is.na(merged$reject_adj_05_b))
 
     forest_rows <- list()
@@ -648,15 +975,18 @@ mod_capstone_replication_server <- function(input, output, session,
       r <- merged[i, ]
       if (is.na(r$reject_05_a) || is.na(r$reject_05_b)) next
       config <- sprintf("n = %d", r$n)
+      innov <- if ("innov_label_a" %in% names(r)) as.character(r$innov_label_a)
+               else if ("innov_dist" %in% names(r)) as.character(r$innov_dist)
+               else ""
 
       # COB
       forest_rows <- c(forest_rows, list(
         data.frame(phi = r$phi, config = config, method = "COB",
                    source = label_a, rate = r$reject_05_a * 100,
-                   se = r$reject_05_se_a * 100, stringsAsFactors = FALSE),
+                   se = r$reject_05_se_a * 100, innov = innov, stringsAsFactors = FALSE),
         data.frame(phi = r$phi, config = config, method = "COB",
                    source = label_b, rate = r$reject_05_b * 100,
-                   se = r$reject_05_se_b * 100, stringsAsFactors = FALSE)
+                   se = r$reject_05_se_b * 100, innov = innov, stringsAsFactors = FALSE)
       ))
 
       # COBA (if available)
@@ -664,10 +994,10 @@ mod_capstone_replication_server <- function(input, output, session,
         forest_rows <- c(forest_rows, list(
           data.frame(phi = r$phi, config = config, method = "COBA",
                      source = label_a, rate = r$reject_adj_05_a * 100,
-                     se = r$reject_adj_05_se_a * 100, stringsAsFactors = FALSE),
+                     se = r$reject_adj_05_se_a * 100, innov = innov, stringsAsFactors = FALSE),
           data.frame(phi = r$phi, config = config, method = "COBA",
                      source = label_b, rate = r$reject_adj_05_b * 100,
-                     se = r$reject_adj_05_se_b * 100, stringsAsFactors = FALSE)
+                     se = r$reject_adj_05_se_b * 100, innov = innov, stringsAsFactors = FALSE)
         ))
       }
     }
@@ -685,13 +1015,15 @@ mod_capstone_replication_server <- function(input, output, session,
     config_levels <- sprintf("n = %d", n_vals)
     forest_df$config <- factor(forest_df$config, levels = config_levels)
     forest_df$phi_label <- sprintf("phi[1] == %.2f", forest_df$phi)
+    forest_df$innov <- factor(forest_df$innov)
+    n_innov <- length(unique(forest_df$innov))
 
     p <- ggplot2::ggplot(forest_df,
            ggplot2::aes(x = rate, y = config, shape = source)) +
       ggplot2::geom_vline(xintercept = 5, linetype = "dashed", linewidth = 0.4) +
-      ggplot2::geom_errorbarh(
+      ggplot2::geom_errorbar(
         ggplot2::aes(xmin = rate - 2 * se, xmax = rate + 2 * se),
-        height = 0.25, linewidth = 0.4, na.rm = TRUE,
+        width = 0.25, linewidth = 0.4, na.rm = TRUE, orientation = "y",
         position = ggplot2::position_dodge(width = 0.45)) +
       ggplot2::geom_point(
         ggplot2::aes(fill = source), size = 2.5,
@@ -701,19 +1033,28 @@ mod_capstone_replication_server <- function(input, output, session,
       ggplot2::scale_fill_manual(
         values = stats::setNames(c("black", "white"), c(label_a, label_b))) +
       ggplot2::labs(x = "Rejection Rate (%)", y = NULL,
-                    shape = NULL, fill = NULL) +
-      ggplot2::guides(
-        shape = ggplot2::guide_legend(override.aes = list(size = 2.5)),
-        fill  = ggplot2::guide_legend(override.aes = list(size = 2.5)))
+                    shape = NULL, fill = NULL)
 
     if (has_coba) {
-      p <- p + ggplot2::facet_grid(method ~ phi_label,
-                                    labeller = ggplot2::label_parsed,
-                                    scales = "free_x")
+      if (n_innov > 1) {
+        p <- p + ggplot2::facet_grid(method + innov ~ phi_label,
+                                      labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                      scales = "free_x")
+      } else {
+        p <- p + ggplot2::facet_grid(method ~ phi_label,
+                                      labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                      scales = "free_x")
+      }
     } else {
-      p <- p + ggplot2::facet_wrap(~ phi_label,
-                                    labeller = ggplot2::label_parsed,
-                                    nrow = 1, scales = "free_x")
+      if (n_innov > 1) {
+        p <- p + ggplot2::facet_grid(innov ~ phi_label,
+                                      labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                      scales = "free_x")
+      } else {
+        p <- p + ggplot2::facet_wrap(~ phi_label,
+                                      labeller = ggplot2::labeller(phi_label = ggplot2::label_parsed),
+                                      nrow = 1, scales = "free_x")
+      }
     }
 
     p <- p + viewer_plot_theme() +

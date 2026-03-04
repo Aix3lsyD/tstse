@@ -125,6 +125,133 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// gen_norm_fast_cpp
+arma::vec gen_norm_fast_cpp(int n, double sd, uint64_t seed);
+RcppExport SEXP _tstse_gen_norm_fast_cpp(SEXP nSEXP, SEXP sdSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_norm_fast_cpp(n, sd, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_unif_fast_cpp
+arma::vec gen_unif_fast_cpp(int n, double half_width, uint64_t seed);
+RcppExport SEXP _tstse_gen_unif_fast_cpp(SEXP nSEXP, SEXP half_widthSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type half_width(half_widthSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_unif_fast_cpp(n, half_width, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_laplace_fast_cpp
+arma::vec gen_laplace_fast_cpp(int n, double scale, uint64_t seed);
+RcppExport SEXP _tstse_gen_laplace_fast_cpp(SEXP nSEXP, SEXP scaleSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_laplace_fast_cpp(n, scale, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_t_fast_cpp
+arma::vec gen_t_fast_cpp(int n, double df, bool scale_to_unit, uint64_t seed);
+RcppExport SEXP _tstse_gen_t_fast_cpp(SEXP nSEXP, SEXP dfSEXP, SEXP scale_to_unitSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< bool >::type scale_to_unit(scale_to_unitSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_t_fast_cpp(n, df, scale_to_unit, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_mixnorm_fast_cpp
+arma::vec gen_mixnorm_fast_cpp(int n, double sd1, double sd2, double prob1, uint64_t seed);
+RcppExport SEXP _tstse_gen_mixnorm_fast_cpp(SEXP nSEXP, SEXP sd1SEXP, SEXP sd2SEXP, SEXP prob1SEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type sd1(sd1SEXP);
+    Rcpp::traits::input_parameter< double >::type sd2(sd2SEXP);
+    Rcpp::traits::input_parameter< double >::type prob1(prob1SEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_mixnorm_fast_cpp(n, sd1, sd2, prob1, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_hetero_fast_cpp
+arma::vec gen_hetero_fast_cpp(int n, const arma::vec& weights, double sd, uint64_t seed);
+RcppExport SEXP _tstse_gen_hetero_fast_cpp(SEXP nSEXP, SEXP weightsSEXP, SEXP sdSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< double >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_hetero_fast_cpp(n, weights, sd, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_garch_fast_cpp
+arma::vec gen_garch_fast_cpp(int n, double omega, const arma::vec& alpha, const arma::vec& beta, int spin, uint64_t seed);
+RcppExport SEXP _tstse_gen_garch_fast_cpp(SEXP nSEXP, SEXP omegaSEXP, SEXP alphaSEXP, SEXP betaSEXP, SEXP spinSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type alpha(alphaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< int >::type spin(spinSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_garch_fast_cpp(n, omega, alpha, beta, spin, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_skt_fast_cpp
+arma::vec gen_skt_fast_cpp(int n, double df, double skew_alpha, bool scale_to_unit, uint64_t seed);
+RcppExport SEXP _tstse_gen_skt_fast_cpp(SEXP nSEXP, SEXP dfSEXP, SEXP skew_alphaSEXP, SEXP scale_to_unitSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< double >::type skew_alpha(skew_alphaSEXP);
+    Rcpp::traits::input_parameter< bool >::type scale_to_unit(scale_to_unitSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_skt_fast_cpp(n, df, skew_alpha, scale_to_unit, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gen_ged_fast_cpp
+arma::vec gen_ged_fast_cpp(int n, double nu, double sd, uint64_t seed);
+RcppExport SEXP _tstse_gen_ged_fast_cpp(SEXP nSEXP, SEXP nuSEXP, SEXP sdSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< double >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< uint64_t >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(gen_ged_fast_cpp(n, nu, sd, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
 // co_tas_boot_kernel_cpp
 Rcpp::NumericVector co_tas_boot_kernel_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string type, std::size_t grain_size);
 RcppExport SEXP _tstse_co_tas_boot_kernel_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP typeSEXP, SEXP grain_sizeSEXP) {
@@ -204,8 +331,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // wbg_profile_kernel_components_cpp
-Rcpp::List wbg_profile_kernel_components_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, int min_p, bool coba);
-RcppExport SEXP _tstse_wbg_profile_kernel_components_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP min_pSEXP, SEXP cobaSEXP) {
+Rcpp::List wbg_profile_kernel_components_cpp(int n, const arma::vec& phi, double vara, const std::vector<uint64_t>& seeds, int maxp, std::string criterion, int min_p, bool coba, bool early_stop);
+RcppExport SEXP _tstse_wbg_profile_kernel_components_cpp(SEXP nSEXP, SEXP phiSEXP, SEXP varaSEXP, SEXP seedsSEXP, SEXP maxpSEXP, SEXP criterionSEXP, SEXP min_pSEXP, SEXP cobaSEXP, SEXP early_stopSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -217,7 +344,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type criterion(criterionSEXP);
     Rcpp::traits::input_parameter< int >::type min_p(min_pSEXP);
     Rcpp::traits::input_parameter< bool >::type coba(cobaSEXP);
-    rcpp_result_gen = Rcpp::wrap(wbg_profile_kernel_components_cpp(n, phi, vara, seeds, maxp, criterion, min_p, coba));
+    Rcpp::traits::input_parameter< bool >::type early_stop(early_stopSEXP);
+    rcpp_result_gen = Rcpp::wrap(wbg_profile_kernel_components_cpp(n, phi, vara, seeds, maxp, criterion, min_p, coba, early_stop));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -336,12 +464,21 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tstse_co_tstat_cpp", (DL_FUNC) &_tstse_co_tstat_cpp, 3},
     {"_tstse_co_full_cpp", (DL_FUNC) &_tstse_co_full_cpp, 3},
     {"_tstse_ols_detrend_cpp", (DL_FUNC) &_tstse_ols_detrend_cpp, 1},
+    {"_tstse_gen_norm_fast_cpp", (DL_FUNC) &_tstse_gen_norm_fast_cpp, 3},
+    {"_tstse_gen_unif_fast_cpp", (DL_FUNC) &_tstse_gen_unif_fast_cpp, 3},
+    {"_tstse_gen_laplace_fast_cpp", (DL_FUNC) &_tstse_gen_laplace_fast_cpp, 3},
+    {"_tstse_gen_t_fast_cpp", (DL_FUNC) &_tstse_gen_t_fast_cpp, 4},
+    {"_tstse_gen_mixnorm_fast_cpp", (DL_FUNC) &_tstse_gen_mixnorm_fast_cpp, 5},
+    {"_tstse_gen_hetero_fast_cpp", (DL_FUNC) &_tstse_gen_hetero_fast_cpp, 4},
+    {"_tstse_gen_garch_fast_cpp", (DL_FUNC) &_tstse_gen_garch_fast_cpp, 6},
+    {"_tstse_gen_skt_fast_cpp", (DL_FUNC) &_tstse_gen_skt_fast_cpp, 5},
+    {"_tstse_gen_ged_fast_cpp", (DL_FUNC) &_tstse_gen_ged_fast_cpp, 4},
     {"_tstse_co_tas_boot_kernel_cpp", (DL_FUNC) &_tstse_co_tas_boot_kernel_cpp, 7},
     {"_tstse_co_tas_boot_tstat_kernel_cpp", (DL_FUNC) &_tstse_co_tas_boot_tstat_kernel_cpp, 7},
     {"_tstse_co_tstat_pure_cpp", (DL_FUNC) &_tstse_co_tstat_pure_cpp, 4},
     {"_tstse_gen_ar_seeded_cpp", (DL_FUNC) &_tstse_gen_ar_seeded_cpp, 4},
     {"_tstse_arma_filter_cpp", (DL_FUNC) &_tstse_arma_filter_cpp, 6},
-    {"_tstse_wbg_profile_kernel_components_cpp", (DL_FUNC) &_tstse_wbg_profile_kernel_components_cpp, 8},
+    {"_tstse_wbg_profile_kernel_components_cpp", (DL_FUNC) &_tstse_wbg_profile_kernel_components_cpp, 9},
     {"_tstse_wbg_bootstrap_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_kernel_grain_cpp, 8},
     {"_tstse_wbg_bootstrap_coba_kernel_grain_cpp", (DL_FUNC) &_tstse_wbg_bootstrap_coba_kernel_grain_cpp, 8},
     {"_tstse_convolve_truncated_cpp", (DL_FUNC) &_tstse_convolve_truncated_cpp, 3},

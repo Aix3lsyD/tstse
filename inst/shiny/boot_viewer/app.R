@@ -1,5 +1,5 @@
 # Monte Carlo Simulation Viewer
-# Interactive Shiny app for exploring DuckDB-stored bootstrap rejection rates
+# Interactive Shiny app for running and exploring bootstrap simulations
 #
 # Module files in R/ are auto-sourced by shiny::loadSupport():
 #   utils.R, mod_capstone.R (+ mod_capstone_*.R sub-tabs),
@@ -9,8 +9,6 @@ library(shiny)
 library(bslib)
 library(thematic)
 library(DT)
-library(duckdb)
-library(DBI)
 library(ggplot2)
 
 # thematic_shiny() is called inside the server function so it can access session
@@ -39,6 +37,50 @@ ui <- page_fluid(
         background-color: #6c2022 !important;
         color: #f8d7da !important;
       }
+
+      /* Dark-mode fixes for shinyWidgets pickerInput */
+      [data-bs-theme="dark"] .bootstrap-select > .dropdown-toggle {
+        background-color: var(--bs-body-bg) !important;
+        color: var(--bs-body-color) !important;
+        border-color: var(--bs-border-color) !important;
+      }
+      [data-bs-theme="dark"] .bootstrap-select .filter-option,
+      [data-bs-theme="dark"] .bootstrap-select .filter-option-inner,
+      [data-bs-theme="dark"] .bootstrap-select .filter-option-inner-inner {
+        color: var(--bs-body-color) !important;
+      }
+      [data-bs-theme="dark"] .bootstrap-select .dropdown-menu {
+        background-color: var(--bs-body-bg) !important;
+        border-color: var(--bs-border-color) !important;
+      }
+      [data-bs-theme="dark"] .bootstrap-select .dropdown-item {
+        color: var(--bs-body-color) !important;
+      }
+      [data-bs-theme="dark"] .bootstrap-select .dropdown-item:hover,
+      [data-bs-theme="dark"] .bootstrap-select .dropdown-item:focus,
+      [data-bs-theme="dark"] .bootstrap-select .dropdown-item.active {
+        background-color: var(--bs-secondary-bg) !important;
+        color: var(--bs-body-color) !important;
+      }
+
+      /* Dark-mode fixes for shinyWidgets actionBttn "default" style */
+      [data-bs-theme="dark"] .btn.btn-default,
+      [data-bs-theme="dark"] .btn-material.btn-default,
+      [data-bs-theme="dark"] .bttn-default {
+        background-color: var(--bs-secondary-bg) !important;
+        color: var(--bs-body-color) !important;
+        border-color: var(--bs-border-color) !important;
+      }
+      [data-bs-theme="dark"] .btn.btn-default:hover,
+      [data-bs-theme="dark"] .btn-material.btn-default:hover,
+      [data-bs-theme="dark"] .bttn-default:hover,
+      [data-bs-theme="dark"] .btn.btn-default:focus,
+      [data-bs-theme="dark"] .btn-material.btn-default:focus,
+      [data-bs-theme="dark"] .bttn-default:focus {
+        background-color: var(--bs-tertiary-bg) !important;
+        color: var(--bs-body-color) !important;
+        border-color: var(--bs-border-color) !important;
+      }
     '))
   ),
 
@@ -47,6 +89,11 @@ ui <- page_fluid(
     h2("Monte Carlo Simulation Viewer", style = "margin: 0;"),
     div(
       class = "d-flex align-items-center gap-3",
+      actionButton(
+        "app_reset", "Reset App",
+        icon = icon("rotate-left"),
+        class = "btn-outline-danger"
+      ),
       input_dark_mode(id = "dark_mode", mode = "dark")
     )
   ),
@@ -54,9 +101,11 @@ ui <- page_fluid(
   tabsetPanel(
     id = "main_tabs",
     mod_capstone_ui("cap"),
+    mod_capstone_sanity_ui("sanity"),
     mod_innovation_comp_ui("innovcomp"),
     mod_benchmark_ui("bench"),
-    mod_adhoc_sim_ui("adhoc")
+    mod_adhoc_sim_ui("adhoc"),
+    mod_console_ui("console")
   )
 )
 
@@ -67,34 +116,26 @@ ui <- page_fluid(
 server <- function(input, output, session) {
   thematic_shiny()
 
-  # Database connection (read-only, NULL if no db_path provided)
-  db_path <- getOption("tstse.viewer_db")
-  has_db <- !is.null(db_path) && nzchar(db_path) && file.exists(db_path)
+  observeEvent(input$app_reset, {
+    showModal(modalDialog(
+      title = "Reset App State?",
+      "This will reload the app and clear all in-memory simulation results and console state.",
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_app_reset", "Reset", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
 
-  if (has_db) {
-    con <- dbConnect(duckdb(), dbdir = db_path, read_only = TRUE)
-    onStop(function() dbDisconnect(con, shutdown = TRUE))
-  } else {
-    con <- NULL
-  }
+  observeEvent(input$confirm_app_reset, {
+    removeModal()
+    session$reload()
+  })
 
-  # Trigger to refresh data after DB writes (capstone/ad-hoc modules)
-  db_refresh_trigger <- reactiveVal(0L)
-
-  # Populate filter choices (shared across modules)
+  # Shared filter choices are populated from in-memory simulation results.
   init_choices <- reactive({
-    db_refresh_trigger()
-    if (!has_db) return(list(n = character(0), phi = character(0), innov = character(0)))
-    tryCatch({
-      n_vals <- dbGetQuery(con, "SELECT DISTINCT n FROM simulations ORDER BY n")
-      phi_vals <- dbGetQuery(con, "SELECT DISTINCT phi FROM simulations ORDER BY phi")
-      innov_vals <- dbGetQuery(con, "SELECT DISTINCT innov_dist FROM simulations ORDER BY innov_dist")
-      list(
-        n = as.character(n_vals$n),
-        phi = as.character(phi_vals$phi),
-        innov = innov_vals$innov_dist
-      )
-    }, error = function(e) list(n = character(0), phi = character(0), innov = character(0)))
+    list(n = character(0), phi = character(0), innov = character(0))
   })
 
   # Reactive values shared across modules
@@ -102,10 +143,12 @@ server <- function(input, output, session) {
   observe({ rv$dark_mode <- input$dark_mode })
 
   # --- Module servers ---
-  mod_capstone_server("cap", con, db_path, db_refresh_trigger, init_choices)
-  mod_innovation_comp_server("innovcomp", con, init_choices)
-  mod_benchmark_server("bench", con)
-  mod_adhoc_sim_server("adhoc", con, db_path)
+  mod_capstone_server("cap")
+  mod_capstone_sanity_server("sanity")
+  mod_innovation_comp_server("innovcomp")
+  mod_benchmark_server("bench")
+  mod_adhoc_sim_server("adhoc")
+  mod_console_server("console")
 }
 
 shinyApp(ui = ui, server = server)

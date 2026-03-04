@@ -40,9 +40,12 @@ Suggests:
     rugarch,
     sandwich,
     signal,
+    shinyvalidate,
+    shinyWidgets,
     sn,
     tidyr,
     tswge,
+    waiter,
     waveslim,
     zoo
 Config/testthat/edition: 3

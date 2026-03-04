@@ -117,6 +117,17 @@ test_that("gen_aruma_flex with GARCH innovations", {
   expect_s3_class(result, "aruma")
 })
 
+test_that("gen_aruma_flex aligns hetero linear shape with explicit ramp weights", {
+  n <- 60
+  gen_shape <- make_gen_hetero(shape = "linear", from = 1, to = 5)
+  gen_vec <- make_gen_hetero(w = seq(1, 5, length.out = n))
+
+  r_shape <- gen_aruma_flex(n = n, phi = 0, innov_gen = gen_shape, plot = FALSE, seed = 123)
+  r_vec <- gen_aruma_flex(n = n, phi = 0, innov_gen = gen_vec, plot = FALSE, seed = 123)
+
+  expect_equal(r_shape$y, r_vec$y)
+})
+
 test_that("gen_aruma_flex respects vara when no innov_gen", {
   r1 <- gen_aruma_flex(n = 500, phi = 0.5, vara = 1, plot = FALSE, seed = 42)
   r2 <- gen_aruma_flex(n = 500, phi = 0.5, vara = 4, plot = FALSE, seed = 42)

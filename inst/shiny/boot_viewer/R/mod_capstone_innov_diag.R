@@ -55,7 +55,8 @@ mod_capstone_innov_diag_server <- function(input, output, session,
 
     # Build generator
     gen <- tryCatch(
-      build_innov_gen(meta$innov_label, meta$innov_params),
+      build_innov_gen(meta$innov_label, meta$innov_params,
+                      use_fast = isTRUE(meta$use_fast)),
       error = function(e) NULL)
     if (is.null(gen)) {
       showNotification("Could not build innovation generator", type = "warning")

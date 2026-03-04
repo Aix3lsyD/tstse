@@ -96,7 +96,7 @@ struct CoBootstrapWorkspace {
         a_curr.set_size(maxp);
         a_prev.set_size(maxp);
         best_phi.set_size(maxp);
-        burn_buf.set_size(max_burn);
+        burn_buf.set_size(max_burn + n);  // burn-in + output for batched AR generation
         // CO-TAS buffers
         z_diff.set_size(n);
         x_trans.set_size(n);  // Will use n-p elements, but allocate n for safety

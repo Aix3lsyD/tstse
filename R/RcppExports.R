@@ -143,6 +143,60 @@ ols_detrend_cpp <- function(x) {
     .Call(`_tstse_ols_detrend_cpp`, x)
 }
 
+#' @keywords internal
+#' @noRd
+gen_norm_fast_cpp <- function(n, sd, seed) {
+    .Call(`_tstse_gen_norm_fast_cpp`, n, sd, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_unif_fast_cpp <- function(n, half_width, seed) {
+    .Call(`_tstse_gen_unif_fast_cpp`, n, half_width, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_laplace_fast_cpp <- function(n, scale, seed) {
+    .Call(`_tstse_gen_laplace_fast_cpp`, n, scale, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_t_fast_cpp <- function(n, df, scale_to_unit, seed) {
+    .Call(`_tstse_gen_t_fast_cpp`, n, df, scale_to_unit, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_mixnorm_fast_cpp <- function(n, sd1, sd2, prob1, seed) {
+    .Call(`_tstse_gen_mixnorm_fast_cpp`, n, sd1, sd2, prob1, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_hetero_fast_cpp <- function(n, weights, sd, seed) {
+    .Call(`_tstse_gen_hetero_fast_cpp`, n, weights, sd, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_garch_fast_cpp <- function(n, omega, alpha, beta, spin, seed) {
+    .Call(`_tstse_gen_garch_fast_cpp`, n, omega, alpha, beta, spin, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_skt_fast_cpp <- function(n, df, skew_alpha, scale_to_unit, seed) {
+    .Call(`_tstse_gen_skt_fast_cpp`, n, df, skew_alpha, scale_to_unit, seed)
+}
+
+#' @keywords internal
+#' @noRd
+gen_ged_fast_cpp <- function(n, nu, sd, seed) {
+    .Call(`_tstse_gen_ged_fast_cpp`, n, nu, sd, seed)
+}
+
 #' CO-TAS Bootstrap Kernel (C++ Implementation)
 #'
 #' Runs the bootstrap loop in parallel using TBB. Each iteration generates an
@@ -256,8 +310,8 @@ arma_filter_cpp <- function(innovations, phi, theta, n, n_start, d) {
 #'   total_iter_us, nreps.
 #' @keywords internal
 #' @noRd
-wbg_profile_kernel_components_cpp <- function(n, phi, vara, seeds, maxp, criterion, min_p, coba) {
-    .Call(`_tstse_wbg_profile_kernel_components_cpp`, n, phi, vara, seeds, maxp, criterion, min_p, coba)
+wbg_profile_kernel_components_cpp <- function(n, phi, vara, seeds, maxp, criterion, min_p, coba, early_stop = FALSE) {
+    .Call(`_tstse_wbg_profile_kernel_components_cpp`, n, phi, vara, seeds, maxp, criterion, min_p, coba, early_stop)
 }
 
 #' WBG Bootstrap Kernel (C++ Implementation)

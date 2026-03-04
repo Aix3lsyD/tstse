@@ -898,8 +898,7 @@ make_gen_hetero <- function(w = NULL, sd = 1, shape = NULL,
   force(base_gen)
   force(w_fun)
 
-  function(n) {
-    # Determine weights
+  get_weights <- function(n) {
     if (!is.null(w_fun)) {
       # Shape-based path
       weights <- w_fun(n)
@@ -919,8 +918,15 @@ make_gen_hetero <- function(w = NULL, sd = 1, shape = NULL,
         weights <- w[seq_len(n)]
       }
     }
-
-    # Generate scaled innovations
-    weights * base_gen(n)
+    weights
   }
+
+  gen <- function(n) {
+    get_weights(n) * base_gen(n)
+  }
+
+  attr(gen, "tstse_innov_kind") <- "hetero"
+  attr(gen, "tstse_hetero_base_gen") <- base_gen
+  attr(gen, "tstse_hetero_weight_builder") <- get_weights
+  gen
 }

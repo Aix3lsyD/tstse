@@ -27,7 +27,8 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                                CriterionType ic_type,
                                CoBootstrapWorkspace& ws,
-                               int min_p = 0);
+                               int min_p = 0,
+                               bool early_stop = false);
 
 // Internal: OLS detrend (pure C++) - allocation-optimized version
 // Uses closed-form formulas for t = 1, 2, ..., n to avoid temporary vectors

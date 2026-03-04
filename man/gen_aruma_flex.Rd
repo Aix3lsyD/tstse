@@ -109,8 +109,10 @@ innovation distribution, then applies the inverse of all nonstationary factors.
 \code{n_start = max(100, 10*p, 10*q)} for ARMA stabilization, plus additional
 burn-in for nonstationary operators.
 
-\strong{Important for GARCH}: When using \code{\link{make_gen_garch}}, a single
-call generates all innovations at once to preserve the dependence structure.
+\strong{Burn-in alignment for heteroscedastic generators}: When using
+\code{\link{make_gen_hetero}}, the internal burn-in portion is left-padded
+with the first requested weight so the returned sample follows the requested
+heteroscedastic profile over the visible \code{n} observations.
 }
 \section{Functions}{
 \itemize{

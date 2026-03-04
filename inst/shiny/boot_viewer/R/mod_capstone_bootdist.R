@@ -52,7 +52,7 @@ mod_capstone_bootdist_server <- function(input, output, session,
       sprintf("#%d (t=%.3f)", i, t_val)
     }, character(1))
     choices <- setNames(as.character(seq_len(n_sims)), labels)
-    updateSelectizeInput(session, "bd_sim", choices = choices, server = FALSE)
+    updateSelectizeInput(session, "bd_sim", choices = choices, server = TRUE)
   })
 
   # If user clicked a row in Individual Results, jump to that sim

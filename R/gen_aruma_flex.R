@@ -65,8 +65,10 @@
 #' \code{n_start = max(100, 10*p, 10*q)} for ARMA stabilization, plus additional
 #' burn-in for nonstationary operators.
 #'
-#' \strong{Important for GARCH}: When using \code{\link{make_gen_garch}}, a single
-#' call generates all innovations at once to preserve the dependence structure.
+#' \strong{Burn-in alignment for heteroscedastic generators}: When using
+#' \code{\link{make_gen_hetero}}, the internal burn-in portion is left-padded
+#' with the first requested weight so the returned sample follows the requested
+#' heteroscedastic profile over the visible \code{n} observations.
 #'
 #' @seealso
 #' \code{\link{gen_aruma}} for the simpler interface with normal innovations,
@@ -153,9 +155,29 @@ gen_aruma_flex <- function(n,
   # Generate with spin-up
   n_sim <- n + dlams + spin
 
-  # Generate all innovations at once (preserves GARCH dependence)
+  # Generate innovations for filtering.
+  # For hetero generators, left-pad burn-in with the first requested weight so
+  # the visible n observations follow the intended heteroscedastic profile.
   total_innov <- n_sim + n_start
-  all_innov <- innov_gen(total_innov)
+  if (identical(attr(innov_gen, "tstse_innov_kind"), "hetero")) {
+    weight_builder <- attr(innov_gen, "tstse_hetero_weight_builder")
+    base_gen <- attr(innov_gen, "tstse_hetero_base_gen")
+
+    if (!is.function(weight_builder) || !is.function(base_gen)) {
+      stop("Heteroscedastic innovation generator is missing required metadata")
+    }
+
+    tail_weights <- weight_builder(n)
+    pad_n <- total_innov - n
+    if (pad_n > 0L) {
+      all_weights <- c(rep(tail_weights[1], pad_n), tail_weights)
+    } else {
+      all_weights <- tail_weights
+    }
+    all_innov <- all_weights * base_gen(total_innov)
+  } else {
+    all_innov <- innov_gen(total_innov)
+  }
 
   # C++ ARMA filter (replaces arima.sim)
   # theta in package convention (textbook sign); C++ negates internally

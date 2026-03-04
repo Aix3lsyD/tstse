@@ -1,55 +1,20 @@
-#' Launch Bootstrap Simulation Viewer
+#' Launch Capstone Simulation App
 #'
-#' Opens an interactive Shiny application for exploring DuckDB-stored
-#' Monte Carlo bootstrap simulation results. Provides rejection rate tables
-#' with color coding and flexible ggplot2 visualizations.
+#' Opens the interactive Shiny app for running and exploring Monte Carlo
+#' simulations in-session.
 #'
-#' @param db_path Path to a DuckDB database file. If omitted, falls back to
-#'   `getOption("tstse.viewer_db")`. If \code{NULL} and no option is set,
-#'   the app launches in simulation-only mode with database-dependent tabs
-#'   disabled.
-#'
-#' @details
-#' The viewer is read-only and does not modify the database. It queries the
-#' `v_rejection_rates` and `v_rejection_rates_by_batch` views from the flat
-#' two-table schema (batches + simulations). Supports pooled and per-batch
-#' rejection rates, power curve plots, heatmaps, and bootstrap distribution
-#' histograms.
-#'
-#' When launched without a database, the Innovation Comparison, Benchmark,
-#' and Ad-Hoc Simulation tabs are fully functional. All other tabs are
-#' disabled.
-#'
-#' Required packages (all in Suggests): shiny, DT, ggplot2, duckdb, DBI.
+#' Required packages (all in Suggests): shiny, DT, ggplot2.
 #'
 #' @return Launches the Shiny app (does not return until the app is closed).
 #'
 #' @examples
 #' \dontrun{
-#' boot_db_viewer("path/to/study.duckdb")
-#'
-#' # Or set the option globally
-#' options(tstse.viewer_db = "path/to/study.duckdb")
-#' boot_db_viewer()
-#'
-#' # Launch without a database (simulation-only mode)
-#' boot_db_viewer(NULL)
+#' capstone_app()
 #' }
 #'
 #' @export
-boot_db_viewer <- function(db_path = NULL) {
-  if (is.null(db_path)) {
-    db_path <- getOption("tstse.viewer_db")
-  }
-  if (!is.null(db_path)) {
-    # Normalize to absolute path so the Shiny app can find it regardless of working directory
-    db_path <- normalizePath(db_path, mustWork = FALSE)
-    if (!file.exists(db_path)) {
-      stop("Database file not found: ", db_path, call. = FALSE)
-    }
-  }
-
-  pkgs <- c("shiny", "DT", "ggplot2", "duckdb", "DBI")
+capstone_app <- function() {
+  pkgs <- c("shiny", "DT", "ggplot2")
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing) > 0) {
     stop(
@@ -60,21 +25,19 @@ boot_db_viewer <- function(db_path = NULL) {
     )
   }
 
-  # Pass db_path to the app via option
-  old_opt <- getOption("tstse.viewer_db")
-  options(tstse.viewer_db = db_path)
-  on.exit(options(tstse.viewer_db = old_opt), add = TRUE)
-
-  app_dir <- system.file("shiny", "boot_viewer", package = "tstse")
-  if (app_dir == "") {
-    # Fallback for devtools::load_all() or development
-    app_dir <- file.path(
-      system.file(package = "tstse"),
-      "..", "..", "inst", "shiny", "boot_viewer"
-    )
-    if (!dir.exists(app_dir)) {
-      # Direct path for load_all from source tree
-      app_dir <- file.path(getwd(), "inst", "shiny", "boot_viewer")
+  # Prefer local source app when running from the project directory so the
+  # newest module edits are picked up immediately.
+  source_app_dir <- file.path(getwd(), "inst", "shiny", "boot_viewer")
+  if (dir.exists(source_app_dir)) {
+    app_dir <- source_app_dir
+  } else {
+    app_dir <- system.file("shiny", "boot_viewer", package = "tstse")
+    if (app_dir == "") {
+      # Fallback for devtools::load_all() or development
+      app_dir <- file.path(
+        system.file(package = "tstse"),
+        "..", "..", "inst", "shiny", "boot_viewer"
+      )
     }
   }
   if (!dir.exists(app_dir)) {

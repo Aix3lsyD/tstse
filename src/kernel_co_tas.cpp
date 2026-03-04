@@ -47,7 +47,8 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp,
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                                CriterionType ic_type,
                                CoBootstrapWorkspace& ws,
-                               int min_p);
+                               int min_p = 0,
+                               bool early_stop = false);
 
 // =============================================================================
 // Theoretical ACF for AR(p) Process

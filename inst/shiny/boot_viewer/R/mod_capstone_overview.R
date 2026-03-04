@@ -1,12 +1,12 @@
 # Capstone Sub-Tab: Coverage / Overview (Tab 2)
-# Shows DB coverage KPIs + heatmap + coverage table
+# Shows in-session coverage KPIs + heatmap + coverage table
 
 mod_capstone_overview_ui <- function(ns) {
   tabPanel("Coverage / Overview",
     br(),
     uiOutput(ns("overview_kpis")),
     p(class = "text-body-secondary",
-      "Shows how many simulations already exist for each grid cell."),
+      "Shows how many simulations have been generated in this session for each grid cell."),
     plotOutput(ns("coverage_heatmap"), height = "450px"),
     br(),
     DTOutput(ns("coverage_table"))
@@ -14,48 +14,19 @@ mod_capstone_overview_ui <- function(ns) {
 }
 
 mod_capstone_overview_server <- function(input, output, session,
-                                         con, grid_rv, raw_results_rv,
-                                         db_refresh_trigger, db_save_path_input) {
+                                         grid_rv, raw_results_rv) {
 
-  # Coverage data: merge DB + in-memory counts
+  # Coverage data from in-memory results
   coverage_data <- reactive({
     grid <- grid_rv()
     if (nrow(grid) == 0) return(data.frame())
-    db_refresh_trigger()
-
-    read_con <- con
-    own_con <- FALSE
-    if (is.null(read_con)) {
-      save_path <- trimws(db_save_path_input() %||% "")
-      if (nzchar(save_path) && file.exists(save_path)) {
-        read_con <- tryCatch(mc_db_connect(save_path, read_only = TRUE),
-                             error = function(e) NULL)
-        own_con <- TRUE
-      }
-    }
 
     n_existing <- integer(nrow(grid))
-    if (!is.null(read_con)) {
-      if (own_con) on.exit(DBI::dbDisconnect(read_con, shutdown = TRUE))
-      for (i in seq_len(nrow(grid))) {
-        cnt <- tryCatch(
-          DBI::dbGetQuery(read_con,
-            "SELECT COUNT(*) AS cnt FROM simulations WHERE n = ? AND phi = ? AND innov_dist = ?",
-            params = list(as.integer(grid$n[i]),
-                          as.numeric(grid$phi[i]),
-                          grid$innov_dist_str[i]))$cnt,
-          error = function(e) 0L)
-        n_existing[i] <- cnt
-      }
-    }
-
-    # Also check in-memory raw results
     raw <- raw_results_rv()
     for (i in seq_len(nrow(grid))) {
       cell_key <- paste(grid$n[i], grid$phi[i], grid$innov_dist_str[i], sep = "|")
       if (cell_key %in% names(raw)) {
-        mem_count <- length(raw[[cell_key]]$results)
-        if (n_existing[i] == 0) n_existing[i] <- mem_count
+        n_existing[i] <- length(raw[[cell_key]]$results)
       }
     }
 
@@ -71,57 +42,15 @@ mod_capstone_overview_server <- function(input, output, session,
 
   # KPI cards (DB summary)
   output$overview_kpis <- renderUI({
-    ns <- session$ns
-    db_refresh_trigger()
-
-    read_con <- con
-    own_con <- FALSE
-    if (is.null(read_con)) {
-      save_path <- trimws(db_save_path_input() %||% "")
-      if (nzchar(save_path) && file.exists(save_path)) {
-        read_con <- tryCatch(mc_db_connect(save_path, read_only = TRUE),
-                             error = function(e) NULL)
-        own_con <- TRUE
-      }
-    }
-
-    if (is.null(read_con)) {
-      # Show in-memory summary
-      raw <- raw_results_rv()
-      n_cells <- length(raw)
-      n_sims <- sum(vapply(raw, function(x) length(x$results), integer(1)))
-      return(fluidRow(
-        column(3, wellPanel(h5("Total Sims"), h3(format(n_sims, big.mark = ",")))),
-        column(3, wellPanel(h5("Configs"), h3(n_cells))),
-        column(3, wellPanel(h5("Source"), h3("In-Memory"))),
-        column(3, wellPanel(h5("Batches"), h3("N/A")))
-      ))
-    }
-    if (own_con) on.exit(DBI::dbDisconnect(read_con, shutdown = TRUE))
-
-    total_sims <- tryCatch(
-      DBI::dbGetQuery(read_con, "SELECT COUNT(*) AS cnt FROM simulations")$cnt,
-      error = function(e) 0)
-    n_configs <- tryCatch(
-      DBI::dbGetQuery(read_con,
-        "SELECT COUNT(DISTINCT (n, phi, innov_dist)) AS cnt FROM simulations")$cnt,
-      error = function(e) 0)
-    n_batches <- tryCatch(
-      DBI::dbGetQuery(read_con, "SELECT COUNT(*) AS cnt FROM batches")$cnt,
-      error = function(e) 0)
-    date_range <- tryCatch(
-      DBI::dbGetQuery(read_con,
-        "SELECT MIN(created_at) AS mn, MAX(created_at) AS mx FROM batches"),
-      error = function(e) data.frame(mn = NA, mx = NA))
+    raw <- raw_results_rv()
+    n_cells <- length(raw)
+    n_sims <- sum(vapply(raw, function(x) length(x$results), integer(1)))
 
     fluidRow(
-      column(3, wellPanel(h5("Total Sims"), h3(format(total_sims, big.mark = ",")))),
-      column(3, wellPanel(h5("Configs"), h3(n_configs))),
-      column(3, wellPanel(h5("Batches"), h3(n_batches))),
-      column(3, wellPanel(h5("Date Range"),
-                           h6(if (is.na(date_range$mn)) "N/A"
-                              else paste(substr(date_range$mn, 1, 10), "to",
-                                         substr(date_range$mx, 1, 10)))))
+      column(3, wellPanel(h5("Total Sims"), h3(format(n_sims, big.mark = ",")))),
+      column(3, wellPanel(h5("Configs"), h3(n_cells))),
+      column(3, wellPanel(h5("Source"), h3("Session"))),
+      column(3, wellPanel(h5("Persistence"), h3("Disabled")))
     )
   })
 

@@ -443,7 +443,7 @@ mod_innovation_comp_ui <- function(id) {
 
 # --- Server function ----------------------------------------------------------
 
-mod_innovation_comp_server <- function(id, con, init_choices) {
+mod_innovation_comp_server <- function(id) {
   moduleServer(id, function(input, output, session) {
 
     # View state per slot: 0 = AR series, 1 = innovations, 2 = overlay

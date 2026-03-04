@@ -222,7 +222,7 @@ void gen_ar_into_ws(arma::vec& out, const arma::vec& phi,
     const int n = out.n_elem;
     const int p = phi.n_elem;
 
-    // Guard against buffer overflow - MAX_P=20 for stack arrays below
+    // Guard against buffer overflow - MAX_P=20
     constexpr int MAX_P = 20;
     if (p > MAX_P) {
         out.zeros();
@@ -237,8 +237,10 @@ void gen_ar_into_ws(arma::vec& out, const arma::vec& phi,
         return;
     }
 
-    // Use workspace buffer for burn-in innovations (ZERO allocation!)
-    // Fill burn_buf directly using subview (head() returns a reference when used in-place)
+    // IMPORTANT: preserve legacy RNG stream semantics.
+    // Burn-in and output innovations are generated in separate Box-Muller calls,
+    // matching gen_ar_into_precomputed(). If burn is odd, combining these calls
+    // changes which paired normal is discarded and breaks seed-level parity.
     fill_normals_boxmuller(burn_buf.head(burn), rng, sd);
 
     // Stack buffer for burn-in (ring buffer, only keep last p values)

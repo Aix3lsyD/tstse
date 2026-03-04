@@ -244,11 +244,13 @@ void burg_fit_pure(const arma::vec& x, int p, arma::vec& phi_out, double& vara_o
 // Workspace-aware Burg with AIC/BIC selection (ZERO allocations)
 // Uses pre-allocated workspace vectors for thread-local reuse
 // min_p: minimum AR order to consider (0 = include AR(0), 1 = AR(1)+ only)
+// early_stop: if true, break after 3 consecutive IC increases (default false)
 // =============================================================================
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                                CriterionType ic_type,
                                CoBootstrapWorkspace& ws,
-                               int min_p = 0) {
+                               int min_p = 0,
+                               bool early_stop = false) {
     const int n = x.n_elem;
 
     if (maxp >= n - 1) {
@@ -274,21 +276,23 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
     double best_ic = std::numeric_limits<double>::infinity();
     double best_vara = vara0;
 
+    // Precompute constants (avoid repeated log() calls in loop)
+    const double log_n = std::log(static_cast<double>(n));
+    double log_var = std::log(vara0);
+
     // IC for AR(0) - only consider if min_p == 0
     if (min_p == 0) {
         double ic0;
         if (ic_type == IC_AIC) {
-            ic0 = n * std::log(vara0) + 2.0 * 1;
+            ic0 = n * log_var + 2.0;
         } else if (ic_type == IC_AICC) {
-            // AICc for AR(0): k=1, denominator is (n - k - 1) = (n - 2)
-            // Guard against division by zero when n <= 2
             if (n <= 2) {
                 ic0 = std::numeric_limits<double>::infinity();
             } else {
-                ic0 = n * std::log(vara0) + 2.0 * 1 * n / (n - 2);
+                ic0 = n * log_var + 2.0 * n / (n - 2);
             }
         } else { // IC_BIC
-            ic0 = n * std::log(vara0) + std::log(static_cast<double>(n)) * 1;
+            ic0 = n * log_var + log_n;
         }
         best_ic = ic0;
     }
@@ -300,6 +304,9 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
     // Determine starting order (always compute from p=1 for correct Levinson recursion,
     // but only consider orders >= min_p for IC comparison)
     const int start_p = std::max(min_p, 1);
+
+    // Early stopping state
+    int consecutive_increases = 0;
 
     // Single pass through all orders
     for (int p = 1; p <= maxp; ++p) {
@@ -321,8 +328,11 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
             break;
         }
 
-        // Update variance using recursive formula
-        var_recursive = var_recursive * (1.0 - phii * phii);
+        // Update variance: keep actual value for best_vara,
+        // accumulate log-space with log1p for IC (avoids per-order log() call)
+        double phii_sq = phii * phii;
+        var_recursive *= (1.0 - phii_sq);
+        log_var += std::log1p(-phii_sq);
 
         // Levinson recursion using workspace vectors (no allocation!)
         ws.a_curr[p - 1] = phii;
@@ -333,11 +343,6 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
             }
         }
 
-        // Swap current to previous (copy only p elements)
-        for (int j = 0; j < p; ++j) {
-            ws.a_prev[j] = ws.a_curr[j];
-        }
-
         // Update prediction errors in-place using reverse loop
         for (int t = n - 1; t >= p; --t) {
             double old_ef = ws.ef[t];
@@ -345,22 +350,22 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
             ws.eb[t] = ws.eb[t - 1] - phii * old_ef;
         }
 
-        // Compute information criterion (enum comparison, no string!)
+        // Compute information criterion using precomputed log_var (no log() call!)
         int k = p + 1;
         double ic;
 
         if (var_recursive <= 0) {
             ic = std::numeric_limits<double>::infinity();
         } else if (ic_type == IC_AIC) {
-            ic = n * std::log(var_recursive) + 2.0 * k;
+            ic = n * log_var + 2.0 * k;
         } else if (ic_type == IC_AICC) {
             if (n - k - 1 > 0) {
-                ic = n * std::log(var_recursive) + 2.0 * k * n / (n - k - 1);
+                ic = n * log_var + 2.0 * k * n / (n - k - 1);
             } else {
                 ic = std::numeric_limits<double>::infinity();
             }
         } else { // IC_BIC
-            ic = n * std::log(var_recursive) + std::log(static_cast<double>(n)) * k;
+            ic = n * log_var + log_n * k;
         }
 
         // Update best model if this is better AND p >= min_p
@@ -372,7 +377,13 @@ BurgResult burg_aic_select_ws(const arma::vec& x, int maxp,
                 ws.best_phi[j] = ws.a_curr[j];
             }
             best_vara = var_recursive;
+            consecutive_increases = 0;
+        } else if (early_stop && p >= start_p && ws.best_p > 0) {
+            if (++consecutive_increases >= 3) break;
         }
+
+        // O(1) swap for next iteration (replaces O(p) element-by-element copy)
+        ws.a_prev.swap(ws.a_curr);
     }
 
     // Enforce min_p constraint: if no model with p >= min_p was selected,

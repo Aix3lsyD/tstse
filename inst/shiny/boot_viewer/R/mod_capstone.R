@@ -15,7 +15,8 @@
            params = list(garch_omega = 0.1,
                          garch_alpha = c(0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025))),
       list(label = "Heteroscedastic", dist_str = "hetero",
-           params = list(hetero_w = function(n) seq(1, 10, length.out = n))),
+           params = list(hetero_shape = "linear", hetero_from = 1,
+                         hetero_to = 10, hetero_sd = 1)),
       list(label = "Student's t",     dist_str = "t(3)",
            params = list(t_df = 3, t_scale = FALSE)),
       list(label = "Laplace",         dist_str = "laplace",
@@ -78,6 +79,85 @@
                          "Laplace", "Uniform", "Mixture Normal",
                          "GARCH", "Heteroscedastic")
 
+.cap_picker_input <- function(inputId, label, choices, selected = NULL, options = list()) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::pickerInput(
+      inputId = inputId,
+      label = label,
+      choices = choices,
+      selected = selected,
+      options = options
+    )
+  } else {
+    selectInput(inputId = inputId, label = label, choices = choices, selected = selected)
+  }
+}
+
+.cap_toggle_input <- function(inputId, label, value = FALSE) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::materialSwitch(
+      inputId = inputId,
+      label = label,
+      value = value,
+      status = "primary",
+      right = FALSE
+    )
+  } else {
+    checkboxInput(inputId = inputId, label = label, value = value)
+  }
+}
+
+.cap_action_button <- function(inputId, label, icon_name = NULL,
+                               class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
+.cap_radio_buttons <- function(inputId, label, choices, selected = NULL, inline = TRUE) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::radioGroupButtons(
+      inputId = inputId,
+      label = label,
+      choices = choices,
+      selected = selected,
+      justified = !isTRUE(inline),
+      direction = if (isTRUE(inline)) "horizontal" else "vertical",
+      size = "sm",
+      checkIcon = list(yes = icon("check"))
+    )
+  } else {
+    radioButtons(inputId = inputId, label = label, choices = choices,
+                 selected = selected, inline = isTRUE(inline))
+  }
+}
+
 # Expand a preset into a grid data.frame
 .expand_preset_grid <- function(preset) {
   rows <- list()
@@ -117,35 +197,33 @@ mod_capstone_ui <- function(id) {
   tabPanel(
     "Capstone Simulation",
     br(),
-    fluidRow(
+    div(id = ns("cap_content"), fluidRow(
       # --- Sidebar (col-3) ---
       column(3,
         # Panel 1: Run Controls (top for visibility)
         wellPanel(
           h4("Run"),
-          actionButton(ns("run_grid"), "Run Grid Simulation",
-                       icon = icon("play"), class = "btn-primary",
-                       style = "width: 100%;"),
-          uiOutput(ns("run_status_ui")),
+          .cap_action_button(ns("run_grid"), "Run Grid Simulation",
+                             icon_name = "play", class = "btn-primary",
+                             full_width = TRUE),
           hr(),
-          textInput(ns("db_save_path"), "DuckDB Path (optional)",
-                    value = "", placeholder = "Leave blank to skip saving"),
-          p(class = "text-body-secondary", style = "font-size: 0.8em; margin-top: -5px;",
-            "Creates DB if it doesn't exist. Leave empty to run without saving."),
-          textInput(ns("batch_label"), "Batch Label", value = "Capstone Run"),
-          radioButtons(ns("run_mode"), NULL,
-                       choices = c("All cells" = "all",
-                                   "Selected rows" = "selected"),
-                       selected = "all", inline = TRUE)
+          p(class = "text-body-secondary", style = "font-size: 0.85em; margin-bottom: 8px;",
+            "Use the toast cancel icon to stop at scenario boundaries."),
+          .cap_radio_buttons(ns("run_mode"), NULL,
+                             choices = c("All cells" = "all",
+                                         "Selected rows" = "selected"),
+                             selected = "all", inline = TRUE)
         ),
 
         # Panel 2: Preset & Grid
         wellPanel(
           h4("Grid Preset"),
-          selectInput(ns("preset"), "Load Preset",
-                      choices = c("Custom", names(.CAPSTONE_PRESETS))),
-          actionButton(ns("load_preset"), "Load Preset",
-                       icon = icon("upload"), class = "btn-sm btn-outline-secondary"),
+          .cap_picker_input(ns("preset"), "Load Preset",
+                            choices = c("Custom", names(.CAPSTONE_PRESETS)),
+                            selected = "Custom"),
+          .cap_action_button(ns("load_preset"), "Load Preset",
+                             icon_name = "upload", class = "btn-sm btn-secondary",
+                             full_width = TRUE),
           hr(),
           h5("Add Config Row"),
           fluidRow(
@@ -154,8 +232,8 @@ mod_capstone_ui <- function(id) {
             column(6, numericInput(ns("new_n"), "n", 200,
                                    min = 10, max = 5000, step = 10))
           ),
-          selectInput(ns("new_innov"), "Innovation",
-                      choices = .CAP_INNOV_CHOICES, selected = "Normal"),
+          .cap_picker_input(ns("new_innov"), "Innovation",
+                            choices = .CAP_INNOV_CHOICES, selected = "Normal"),
 
           # Distribution-specific params (minimal set for custom rows)
           conditionalPanel(
@@ -174,10 +252,10 @@ mod_capstone_ui <- function(id) {
           ),
           conditionalPanel(
             condition = "input.new_innov == 'Heteroscedastic'", ns = ns,
-            selectInput(ns("new_hetero_shape"), "Shape",
-                        choices = c("linear", "sqrt", "log", "exp", "power",
-                                    "step", "periodic"),
-                        selected = "linear"),
+            .cap_picker_input(ns("new_hetero_shape"), "Shape",
+                              choices = c("linear", "sqrt", "log", "exp", "power",
+                                          "step", "periodic"),
+                              selected = "linear"),
             numericInput(ns("new_hetero_from"), "From", value = 1, min = 0.01, step = 0.5),
             numericInput(ns("new_hetero_to"), "To", value = 10, min = 0.01, step = 0.5)
           ),
@@ -202,10 +280,10 @@ mod_capstone_ui <- function(id) {
           ),
 
           fluidRow(
-            column(6, actionButton(ns("add_row"), "Add Row",
-                                   icon = icon("plus"), class = "btn-sm btn-success")),
-            column(6, actionButton(ns("clear_grid"), "Clear All",
-                                   icon = icon("trash"), class = "btn-sm btn-outline-danger"))
+            column(6, .cap_action_button(ns("add_row"), "Add Row",
+                                         icon_name = "plus", class = "btn-sm btn-success")),
+            column(6, .cap_action_button(ns("clear_grid"), "Clear All",
+                                         icon_name = "trash", class = "btn-sm btn-outline-danger"))
           )
         ),
 
@@ -218,10 +296,11 @@ mod_capstone_ui <- function(id) {
                        min = 1, max = 9999, step = 100),
           numericInput(ns("maxp"), "Max AR order", value = 5,
                        min = 1, max = 20, step = 1),
-          selectInput(ns("criterion"), "Criterion",
-                      choices = c("aic", "aicc", "bic"), selected = "aic"),
-          checkboxInput(ns("bootadj"), "COBA adjustment", value = TRUE),
-          checkboxInput(ns("minp1"), "Min AR order = 1", value = TRUE),
+          .cap_picker_input(ns("criterion"), "Criterion",
+                            choices = c("aic", "aicc", "bic"), selected = "aic"),
+          .cap_toggle_input(ns("bootadj"), "COBA adjustment", value = TRUE),
+          .cap_toggle_input(ns("minp1"), "Min AR order = 1", value = TRUE),
+          .cap_toggle_input(ns("use_fast"), "Use fast innovation generators", value = FALSE),
           numericInput(ns("seed"), "Base seed", value = 3024)
         )
       ),
@@ -240,8 +319,8 @@ mod_capstone_ui <- function(id) {
             DTOutput(ns("grid_table")),
             br(),
             fluidRow(
-              column(6, actionButton(ns("delete_selected"), "Delete Selected Rows",
-                                     icon = icon("minus"), class = "btn-sm btn-outline-danger"))
+              column(6, .cap_action_button(ns("delete_selected"), "Delete Selected Rows",
+                                           icon_name = "minus", class = "btn-sm btn-outline-danger"))
             )
           ),
 
@@ -253,25 +332,21 @@ mod_capstone_ui <- function(id) {
           mod_capstone_grids_ui(ns),
           # Tab 5: Replication Comparison
           mod_capstone_replication_ui(ns),
-          # Tab 6: Plots
-          mod_capstone_plots_ui(ns),
-          # Tab 7: P-value Diagnostics
+          # Tab 6: P-value Diagnostics
           mod_capstone_pvalue_ui(ns),
-          # Tab 8: Bootstrap Distribution
+          # Tab 7: Bootstrap Distribution
           mod_capstone_bootdist_ui(ns),
-          # Tab 9: Innovation Diagnostics
-          mod_capstone_innov_diag_ui(ns),
-          # Tab 10: Null Model Diagnostics
+          # Tab 8: Null Model Diagnostics
           mod_capstone_null_diag_ui(ns),
 
-          # Tab 11: Run Log
+          # Tab 9: Run Log
           tabPanel("Run Log",
             br(),
             verbatimTextOutput(ns("run_log"))
           )
         )
       )
-    )
+    ))
   )
 }
 
@@ -279,15 +354,111 @@ mod_capstone_ui <- function(id) {
 # Server
 # =============================================================================
 
-mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
-                                init_choices) {
+mod_capstone_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    has_waiter <- requireNamespace("waiter", quietly = TRUE)
+    has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+    has_shinywidgets <- requireNamespace("shinyWidgets", quietly = TRUE)
 
-    # When a DB is loaded at startup, it's read-only for viewing.
-    # Save path defaults empty so new saves go to a fresh DB.
-    # Store the loaded path to prevent overwriting.
-    loaded_db_path <- if (!is.null(db_path) && nzchar(db_path)) db_path else NULL
+    .update_picker <- function(input_id, selected = NULL, choices = NULL) {
+      if (has_shinywidgets) {
+        shinyWidgets::updatePickerInput(session, input_id,
+          selected = selected, choices = choices)
+      } else {
+        updateSelectInput(session, input_id,
+          selected = selected, choices = choices)
+      }
+    }
+
+    .update_toggle <- function(input_id, value) {
+      if (has_shinywidgets) {
+        shinyWidgets::updateMaterialSwitch(session, input_id, value = isTRUE(value))
+      } else {
+        updateCheckboxInput(session, input_id, value = isTRUE(value))
+      }
+    }
+
+    .with_cap_waiter <- function(expr) {
+      if (!has_waiter) return(force(expr))
+      w <- waiter::Waiter$new(
+        id = ns("cap_content"),
+        html = waiter::spin_fading_circles(),
+        color = "rgba(0, 0, 0, 0.25)"
+      )
+      w$show()
+      on.exit(w$hide(), add = TRUE)
+      force(expr)
+    }
+
+    .parse_num_list_or_null <- function(x) {
+      if (is.null(x) || !nzchar(trimws(x))) return(numeric(0))
+      vals <- suppressWarnings(as.numeric(strsplit(x, "\\s*,\\s*")[[1]]))
+      vals[!is.na(vals)]
+    }
+
+    .validate_add_row <- function(innov_label, params, phi_val, n_val) {
+      errs <- character(0)
+      if (is.na(phi_val) || phi_val < 0 || phi_val >= 1) {
+        errs <- c(errs, "Phi must be in [0, 1).")
+      }
+      if (is.na(n_val) || n_val < 10) {
+        errs <- c(errs, "n must be at least 10.")
+      }
+      if (innov_label == "Student's t" && (is.na(params$t_df) || params$t_df <= 0)) {
+        errs <- c(errs, "Student's t df must be positive.")
+      }
+      if (innov_label == "Laplace" && (is.na(params$lap_scale) || params$lap_scale <= 0)) {
+        errs <- c(errs, "Laplace scale must be positive.")
+      }
+      if (innov_label == "GARCH") {
+        if (is.na(params$garch_omega) || params$garch_omega <= 0) {
+          errs <- c(errs, "GARCH omega must be positive.")
+        }
+        alpha <- .parse_num_list(params$garch_alpha)
+        if (length(alpha) == 0 || any(alpha < 0)) {
+          errs <- c(errs, "GARCH alpha must be a comma-separated list of non-negative numbers.")
+        }
+      }
+      if (innov_label == "Heteroscedastic") {
+        if (is.na(params$hetero_from) || params$hetero_from <= 0 ||
+            is.na(params$hetero_to) || params$hetero_to <= 0) {
+          errs <- c(errs, "Heteroscedastic from/to must be positive.")
+        }
+        if (!is.na(params$hetero_from) && !is.na(params$hetero_to) &&
+            params$hetero_to < params$hetero_from) {
+          errs <- c(errs, "Heteroscedastic 'To' must be >= 'From'.")
+        }
+      }
+      if (innov_label == "Mixture Normal") {
+        if (is.na(params$mix_sd1) || params$mix_sd1 <= 0 ||
+            is.na(params$mix_sd2) || params$mix_sd2 <= 0) {
+          errs <- c(errs, "Mixture sd1/sd2 must be positive.")
+        }
+        if (is.na(params$mix_prob1) || params$mix_prob1 <= 0 || params$mix_prob1 >= 1) {
+          errs <- c(errs, "Mixture prob1 must be strictly between 0 and 1.")
+        }
+      }
+      if (innov_label == "Skew-t" && (is.na(params$skt_df) || params$skt_df <= 0)) {
+        errs <- c(errs, "Skew-t df must be positive.")
+      }
+      if (innov_label == "GED" && (is.na(params$ged_nu) || params$ged_nu <= 0)) {
+        errs <- c(errs, "GED nu must be positive.")
+      }
+      if (innov_label == "Uniform" && (is.na(params$unif_hw) || params$unif_hw <= 0)) {
+        errs <- c(errs, "Uniform half-width must be positive.")
+      }
+      errs
+    }
+
+    .validate_run_params <- function(nsims, nb, maxp, seed) {
+      errs <- character(0)
+      if (is.na(nsims) || nsims < 1) errs <- c(errs, "Simulations per cell must be at least 1.")
+      if (is.na(nb) || nb < 1) errs <- c(errs, "Bootstrap replicates must be at least 1.")
+      if (is.na(maxp) || maxp < 1 || maxp > 20) errs <- c(errs, "Max AR order must be between 1 and 20.")
+      if (!is.null(seed) && !is.na(seed) && seed < 1) errs <- c(errs, "Base seed must be positive when provided.")
+      errs
+    }
 
     # --- Grid state ---
     grid_rv <- reactiveVal(data.frame(
@@ -313,12 +484,125 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
 
     # Run log
     run_log_rv <- reactiveVal("")
+    run_status_tick <- reactiveVal(0L)
+    run_state <- new.env(parent = emptyenv())
+    run_state$active <- FALSE
+    run_state$cancel_requested <- FALSE
+    run_state$ctx <- NULL
+    run_state$waiter <- NULL
+    run_state$toast_id <- NULL
+    run_state$status_seq <- 0L
+
+    .bump_run_status <- function() {
+      run_state$status_seq <- run_state$status_seq + 1L
+      run_status_tick(run_state$status_seq)
+    }
+
+    v <- NULL
+    if (has_shinyvalidate) {
+      v <- shinyvalidate::InputValidator$new()
+      v$add_rule("new_phi", function(value) {
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv < 0 || vv >= 1) "Must be in [0, 1)" else NULL
+      })
+      v$add_rule("new_n", function(value) {
+        vv <- suppressWarnings(as.integer(value))
+        if (is.na(vv) || vv < 10) "Must be >= 10" else NULL
+      })
+      v$add_rule("nsims", function(value) {
+        vv <- suppressWarnings(as.integer(value))
+        if (is.na(vv) || vv < 1) "Must be >= 1" else NULL
+      })
+      v$add_rule("nb", function(value) {
+        vv <- suppressWarnings(as.integer(value))
+        if (is.na(vv) || vv < 1) "Must be >= 1" else NULL
+      })
+      v$add_rule("maxp", function(value) {
+        vv <- suppressWarnings(as.integer(value))
+        if (is.na(vv) || vv < 1 || vv > 20) "Must be 1..20" else NULL
+      })
+      v$add_rule("seed", function(value) {
+        if (is.null(value) || is.na(value) || !nzchar(as.character(value))) return(NULL)
+        vv <- suppressWarnings(as.integer(value))
+        if (is.na(vv) || vv < 1) "Must be positive" else NULL
+      })
+
+      # Distribution-specific add-row rules
+      v$add_rule("new_t_df", function(value) {
+        if (!identical(input$new_innov, "Student's t")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "df must be positive" else NULL
+      })
+      v$add_rule("new_lap_scale", function(value) {
+        if (!identical(input$new_innov, "Laplace")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "Scale must be positive" else NULL
+      })
+      v$add_rule("new_garch_omega", function(value) {
+        if (!identical(input$new_innov, "GARCH")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "Omega must be positive" else NULL
+      })
+      v$add_rule("new_garch_alpha", function(value) {
+        if (!identical(input$new_innov, "GARCH")) return(NULL)
+        vals <- .parse_num_list(value)
+        if (length(vals) == 0) return("Enter at least one alpha value")
+        if (any(vals < 0)) return("Alpha values must be non-negative")
+        NULL
+      })
+      v$add_rule("new_hetero_from", function(value) {
+        if (!identical(input$new_innov, "Heteroscedastic")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "From must be positive" else NULL
+      })
+      v$add_rule("new_hetero_to", function(value) {
+        if (!identical(input$new_innov, "Heteroscedastic")) return(NULL)
+        to_v <- suppressWarnings(as.numeric(value))
+        from_v <- suppressWarnings(as.numeric(input$new_hetero_from))
+        if (is.na(to_v) || to_v <= 0) return("To must be positive")
+        if (!is.na(from_v) && to_v < from_v) return("To must be >= From")
+        NULL
+      })
+      v$add_rule("new_mix_sd1", function(value) {
+        if (!identical(input$new_innov, "Mixture Normal")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "sd1 must be positive" else NULL
+      })
+      v$add_rule("new_mix_sd2", function(value) {
+        if (!identical(input$new_innov, "Mixture Normal")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "sd2 must be positive" else NULL
+      })
+      v$add_rule("new_mix_prob1", function(value) {
+        if (!identical(input$new_innov, "Mixture Normal")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0 || vv >= 1) "prob1 must be in (0,1)" else NULL
+      })
+      v$add_rule("new_skt_df", function(value) {
+        if (!identical(input$new_innov, "Skew-t")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "df must be positive" else NULL
+      })
+      v$add_rule("new_ged_nu", function(value) {
+        if (!identical(input$new_innov, "GED")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "nu must be positive" else NULL
+      })
+      v$add_rule("new_unif_hw", function(value) {
+        if (!identical(input$new_innov, "Uniform")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "Half-width must be positive" else NULL
+      })
+
+      v$enable()
+    }
 
     # =========================================================================
     # Preset loading
     # =========================================================================
 
     observeEvent(input$load_preset, {
+      .with_cap_waiter({
       preset_name <- input$preset
       if (preset_name == "Custom" || is.null(preset_name)) {
         grid_rv(data.frame(
@@ -339,14 +623,15 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
       if (!is.null(defs$nsims))     updateNumericInput(session, "nsims", value = defs$nsims)
       if (!is.null(defs$nb))        updateNumericInput(session, "nb", value = defs$nb)
       if (!is.null(defs$maxp))      updateNumericInput(session, "maxp", value = defs$maxp)
-      if (!is.null(defs$criterion)) updateSelectInput(session, "criterion", selected = defs$criterion)
-      if (!is.null(defs$bootadj))   updateCheckboxInput(session, "bootadj", value = defs$bootadj)
-      if (!is.null(defs$min_p))     updateCheckboxInput(session, "minp1", value = defs$min_p == 1L)
+      if (!is.null(defs$criterion)) .update_picker("criterion", selected = defs$criterion)
+      if (!is.null(defs$bootadj))   .update_toggle("bootadj", value = defs$bootadj)
+      if (!is.null(defs$min_p))     .update_toggle("minp1", value = defs$min_p == 1L)
       if (!is.null(defs$seed))      updateNumericInput(session, "seed", value = defs$seed)
 
       showNotification(
         sprintf("Loaded '%s': %d cells", preset_name, nrow(grid_df)),
         type = "message", duration = 4)
+      })
     })
 
     # =========================================================================
@@ -354,6 +639,12 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
     # =========================================================================
 
     observeEvent(input$add_row, {
+      .with_cap_waiter({
+      if (!is.null(v) && !isTRUE(v$is_valid())) {
+        showNotification("Please fix highlighted input errors before adding a row.",
+                         type = "warning", duration = 4)
+        return()
+      }
       phi_val <- input$new_phi
       n_val <- as.integer(input$new_n)
       innov_label <- input$new_innov
@@ -382,6 +673,12 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
         list()
       )
 
+      errs <- .validate_add_row(innov_label, params, phi_val, n_val)
+      if (length(errs) > 0) {
+        showNotification(paste(errs, collapse = " "), type = "error", duration = 6)
+        return()
+      }
+
       dist_str <- build_innov_dist_str(innov_label, params)
 
       new_row <- data.frame(
@@ -397,6 +694,9 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
       } else {
         grid_rv(new_row)
       }
+
+      showNotification("Row added to grid.", type = "message", duration = 2)
+      })
     })
 
     observeEvent(input$delete_selected, {
@@ -431,11 +731,117 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
         ))
       }
 
+      .compact_vec <- function(x, max_items = 4L) {
+        if (is.function(x)) return("<function>")
+        if (is.null(x)) return("NULL")
+        if (is.character(x) && length(x) == 1L) {
+          txt <- trimws(x)
+          if (grepl(",", txt, fixed = TRUE)) {
+            vals <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
+            if (!any(is.na(vals))) x <- vals
+          }
+        }
+        if (is.numeric(x)) {
+          vals <- signif(as.numeric(x), 4)
+          if (length(vals) <= max_items) {
+            return(paste0("[", paste(vals, collapse = ","), "]"))
+          }
+          return(paste0("[", paste(vals[seq_len(max_items)], collapse = ","),
+                        ",+", length(vals) - max_items, "]"))
+        }
+        txt <- paste(deparse(x, width.cutoff = 120L), collapse = "")
+        if (nchar(txt) > 60) txt <- paste0(substr(txt, 1, 57), "...")
+        txt
+      }
+
+      .scenario_params_full <- function(label, params) {
+        p <- params
+        if (is.null(p)) p <- list()
+        switch(label,
+          "Normal" = sprintf("sd=%s", p$norm_sd %||% 1),
+          "Student's t" = sprintf("df=%s, scale=%s", p$t_df %||% 3, isTRUE(p$t_scale)),
+          "Skew-t" = sprintf("df=%s, alpha=%s, scale=%s",
+                              p$skt_df %||% 5, p$skt_alpha %||% 0, isTRUE(p$skt_scale)),
+          "GED" = sprintf("nu=%s, sd=%s", p$ged_nu %||% 2, p$ged_sd %||% 1),
+          "Laplace" = sprintf("scale=%s", p$lap_scale %||% (1 / sqrt(2))),
+          "Uniform" = sprintf("half_width=%s", p$unif_hw %||% sqrt(3)),
+          "Mixture Normal" = sprintf("sd1=%s, sd2=%s, prob1=%s",
+                                      p$mix_sd1 %||% 1, p$mix_sd2 %||% 3, p$mix_prob1 %||% 0.9),
+          "GARCH" = {
+            alpha <- .compact_vec(p$garch_alpha %||% c(0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025), max_items = 8L)
+            beta <- if (is.null(p$garch_beta) || identical(trimws(as.character(p$garch_beta)), "")) {
+              "NULL"
+            } else {
+              .compact_vec(p$garch_beta, max_items = 8L)
+            }
+            sprintf("omega=%s, alpha=%s, beta=%s", p$garch_omega %||% 0.1, alpha, beta)
+          },
+          "Heteroscedastic" = {
+            if (!is.null(p$hetero_w)) {
+              sprintf("w=%s, sd=%s", .compact_vec(p$hetero_w), p$hetero_sd %||% 1)
+            } else {
+              shape <- p$hetero_shape %||% "linear"
+              if (shape %in% c("linear", "sqrt", "log", "exp")) {
+                sprintf("shape=%s, from=%s, to=%s, sd=%s",
+                        shape, p$hetero_from %||% 1, p$hetero_to %||% 10, p$hetero_sd %||% 1)
+              } else if (shape == "power") {
+                sprintf("shape=power, from=%s, to=%s, power=%s, sd=%s",
+                        p$hetero_from %||% 1, p$hetero_to %||% 10, p$hetero_power %||% 2, p$hetero_sd %||% 1)
+              } else if (shape == "step") {
+                sprintf("shape=step, breaks=%s, levels=%s, sd=%s",
+                        .compact_vec(p$hetero_breaks %||% "0.5"),
+                        .compact_vec(p$hetero_levels %||% "1,5"),
+                        p$hetero_sd %||% 1)
+              } else {
+                sprintf("shape=periodic, base_w=%s, amplitude=%s, period=%s, sd=%s",
+                        p$hetero_base_w %||% 1, p$hetero_amplitude %||% 0.5,
+                        p$hetero_period %||% 12, p$hetero_sd %||% 1)
+              }
+            }
+          },
+          {
+            if (length(p) == 0) return("default")
+            paste(sprintf("%s=%s", names(p), vapply(p, .compact_vec, character(1))), collapse = ", ")
+          }
+        )
+      }
+
+      .scenario_params_short <- function(full_txt, max_chars = 72L) {
+        out <- full_txt
+        out <- gsub("omega", "om", out, fixed = TRUE)
+        out <- gsub("alpha", "a", out, fixed = TRUE)
+        out <- gsub("beta", "b", out, fixed = TRUE)
+        out <- gsub("amplitude", "amp", out, fixed = TRUE)
+        out <- gsub("period", "per", out, fixed = TRUE)
+        out <- gsub("half_width", "hw", out, fixed = TRUE)
+        out <- gsub("shape", "sh", out, fixed = TRUE)
+        out <- gsub("scale", "sc", out, fixed = TRUE)
+        if (nchar(out) > max_chars) {
+          out <- paste0(substr(out, 1, max_chars - 3L), "...")
+        }
+        out
+      }
+
+      params_full <- mapply(
+        .scenario_params_full,
+        label = grid$innov_label,
+        params = grid$innov_params,
+        SIMPLIFY = TRUE,
+        USE.NAMES = FALSE
+      )
+      params_short <- vapply(params_full, .scenario_params_short, character(1))
+      params_cell <- sprintf(
+        "<span title=\"%s\">%s</span>",
+        htmltools::htmlEscape(params_full, attribute = TRUE),
+        htmltools::htmlEscape(params_short)
+      )
+
       display <- data.frame(
         Phi     = grid$phi,
         n       = grid$n,
         Innovation = grid$innov_label,
-        `DB Key`   = grid$innov_dist_str,
+        `Scenario Key` = grid$innov_dist_str,
+        `Scenario Params` = params_cell,
         check.names = FALSE,
         stringsAsFactors = FALSE
       )
@@ -443,6 +849,7 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
       datatable(
         display,
         rownames = FALSE,
+        escape = c(1, 2, 3, 4),
         selection = "multiple",
         options = list(
           dom = "tip",
@@ -459,7 +866,423 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
     # Simulation execution
     # =========================================================================
 
+    .log_line <- function(msg) {
+      ctx <- run_state$ctx
+      if (is.null(ctx)) return()
+      ctx$log_lines <- c(ctx$log_lines,
+                         sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), msg))
+      run_state$ctx <- ctx
+      run_log_rv(paste(ctx$log_lines, collapse = "\n"))
+      .bump_run_status()
+    }
+
+    .ctx_with_latest_logs <- function(ctx) {
+      current <- run_state$ctx
+      if (!is.null(current) && !is.null(current$log_lines)) {
+        ctx$log_lines <- current$log_lines
+      }
+      ctx
+    }
+
+    .run_toast_ui <- function(ctx, detail = NULL) {
+      n_cells <- max(1L, as.integer(ctx$n_cells))
+      done <- max(0L, min(n_cells, as.integer(ctx$cell_idx) - 1L))
+      pct <- round(100 * done / n_cells)
+      status_line <- sprintf("Running grid simulation... Cell %d/%d", min(as.integer(ctx$cell_idx), n_cells), n_cells)
+      if (isTRUE(run_state$cancel_requested)) {
+        status_line <- paste0(status_line, " (stop requested)")
+      }
+      if (is.null(detail) || !nzchar(detail)) detail <- ""
+
+      tags$div(
+        style = "min-width: 320px;",
+        tags$div(class = "progress", style = "height: 8px; margin-bottom: 8px;",
+                 tags$div(class = "progress-bar bg-info",
+                          role = "progressbar",
+                          style = sprintf("width: %d%%;", pct),
+                          `aria-valuenow` = pct, `aria-valuemin` = "0", `aria-valuemax` = "100")),
+        tags$div(tags$strong(status_line)),
+        if (nzchar(detail)) tags$div(class = "text-muted", style = "font-size: 0.9em;", detail)
+      )
+    }
+
+    .show_run_toast <- function(detail = NULL) {
+      if (!isTRUE(run_state$active) || is.null(run_state$ctx)) return(invisible(NULL))
+      if (is.null(run_state$toast_id)) run_state$toast_id <- paste0(ns("run_progress"), "_toast")
+
+      showNotification(
+        ui = .run_toast_ui(run_state$ctx, detail = detail),
+        id = run_state$toast_id,
+        duration = NULL,
+        closeButton = FALSE,
+        type = "message",
+        action = actionLink(
+          inputId = ns("cancel_run_toast"),
+          label = icon("ban"),
+          style = "padding: 0; color: var(--bs-warning); text-decoration: none;"
+        ),
+        session = session
+      )
+      invisible(NULL)
+    }
+
+    .fmt_log_value <- function(x) {
+      if (is.function(x)) return("<function>")
+      txt <- paste(deparse(x, width.cutoff = 500L), collapse = "")
+      if (nchar(txt) > 240) {
+        txt <- paste0(substr(txt, 1, 237), "...")
+      }
+      txt
+    }
+
+    .parse_num_list <- function(x) {
+      if (is.null(x)) return(NULL)
+      if (is.character(x)) {
+        vals <- suppressWarnings(as.numeric(trimws(strsplit(x, ",")[[1]])))
+      } else {
+        vals <- suppressWarnings(as.numeric(x))
+      }
+      if (length(vals) == 0 || any(is.na(vals))) return(NULL)
+      vals
+    }
+
+    .format_make_gen_call <- function(innov_label, params, use_fast) {
+      suffix <- if (isTRUE(use_fast)) "_fast" else ""
+      switch(innov_label,
+        "Normal" = {
+          sd_val <- params$norm_sd
+          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+          sprintf("make_gen_norm%s(sd = %s)", suffix, .fmt_log_value(sd_val))
+        },
+        "Student's t" = {
+          df_val <- params$t_df
+          if (is.null(df_val) || is.na(df_val) || df_val < 1) df_val <- 3
+          sc_val <- isTRUE(params$t_scale)
+          sprintf("make_gen_t%s(df = %s, scale = %s)",
+                  suffix, .fmt_log_value(df_val), .fmt_log_value(sc_val))
+        },
+        "Skew-t" = {
+          df_val <- params$skt_df
+          if (is.null(df_val) || is.na(df_val) || df_val < 3) df_val <- 5
+          alpha_val <- params$skt_alpha
+          if (is.null(alpha_val) || is.na(alpha_val)) alpha_val <- 0
+          sc_val <- isTRUE(params$skt_scale)
+          sprintf("make_gen_skt%s(df = %s, alpha = %s, scale = %s)",
+                  suffix, .fmt_log_value(df_val), .fmt_log_value(alpha_val), .fmt_log_value(sc_val))
+        },
+        "GED" = {
+          nu_val <- params$ged_nu
+          if (is.null(nu_val) || is.na(nu_val) || nu_val <= 0) nu_val <- 2
+          sd_val <- params$ged_sd
+          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+          sprintf("make_gen_ged%s(nu = %s, sd = %s)",
+                  suffix, .fmt_log_value(nu_val), .fmt_log_value(sd_val))
+        },
+        "Laplace" = {
+          sc <- params$lap_scale
+          if (is.null(sc) || is.na(sc) || sc <= 0) sc <- 1 / sqrt(2)
+          sprintf("make_gen_laplace%s(scale = %s)", suffix, .fmt_log_value(sc))
+        },
+        "Uniform" = {
+          hw <- params$unif_hw
+          if (is.null(hw) || is.na(hw) || hw <= 0) hw <- sqrt(3)
+          sprintf("make_gen_unif%s(half_width = %s)", suffix, .fmt_log_value(hw))
+        },
+        "Mixture Normal" = {
+          sd1 <- params$mix_sd1
+          sd2 <- params$mix_sd2
+          p1 <- params$mix_prob1
+          if (is.null(sd1) || is.na(sd1) || sd1 <= 0) sd1 <- 1
+          if (is.null(sd2) || is.na(sd2) || sd2 <= 0) sd2 <- 3
+          if (is.null(p1) || is.na(p1) || p1 <= 0 || p1 >= 1) p1 <- 0.9
+          sprintf("make_gen_mixnorm%s(sd1 = %s, sd2 = %s, prob1 = %s)",
+                  suffix, .fmt_log_value(sd1), .fmt_log_value(sd2), .fmt_log_value(p1))
+        },
+        "GARCH" = {
+          omega <- params$garch_omega
+          if (is.null(omega) || is.na(omega) || omega <= 0) omega <- 0.1
+          alpha <- .parse_num_list_or_null(params$garch_alpha)
+          if (is.null(alpha) || length(alpha) == 0) {
+            alpha <- c(0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025)
+          }
+          beta <- .parse_num_list_or_null(params$garch_beta)
+          if (is.null(beta)) {
+            sprintf("make_gen_garch%s(omega = %s, alpha = %s, beta = NULL)",
+                    suffix, .fmt_log_value(omega), .fmt_log_value(alpha))
+          } else {
+            sprintf("make_gen_garch%s(omega = %s, alpha = %s, beta = %s)",
+                    suffix, .fmt_log_value(omega), .fmt_log_value(alpha), .fmt_log_value(beta))
+          }
+        },
+        "Heteroscedastic" = {
+          if (!is.null(params$hetero_w)) {
+            sd_val <- params$hetero_sd
+            if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+            sprintf("make_gen_hetero%s(w = %s, sd = %s)",
+                    suffix, .fmt_log_value(params$hetero_w), .fmt_log_value(sd_val))
+          } else {
+            sd_val <- params$hetero_sd
+            if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+            shape <- params$hetero_shape %||% "linear"
+            if (shape %in% c("linear", "sqrt", "log", "exp")) {
+              from_val <- params$hetero_from %||% 1
+              to_val <- params$hetero_to %||% 10
+              sprintf("make_gen_hetero%s(shape = %s, from = %s, to = %s, sd = %s)",
+                      suffix, .fmt_log_value(shape), .fmt_log_value(from_val),
+                      .fmt_log_value(to_val), .fmt_log_value(sd_val))
+            } else if (shape == "power") {
+              from_val <- params$hetero_from %||% 1
+              to_val <- params$hetero_to %||% 10
+              p_val <- params$hetero_power %||% 2
+              sprintf("make_gen_hetero%s(shape = \"power\", from = %s, to = %s, power = %s, sd = %s)",
+                      suffix, .fmt_log_value(from_val), .fmt_log_value(to_val),
+                      .fmt_log_value(p_val), .fmt_log_value(sd_val))
+            } else if (shape == "step") {
+              brk <- .parse_num_list_or_null(params$hetero_breaks)
+              lvl <- .parse_num_list_or_null(params$hetero_levels)
+              if (is.null(brk)) brk <- 0.5
+              if (is.null(lvl)) lvl <- c(1, 5)
+              sprintf("make_gen_hetero%s(shape = \"step\", breaks = %s, levels = %s, sd = %s)",
+                      suffix, .fmt_log_value(brk), .fmt_log_value(lvl), .fmt_log_value(sd_val))
+            } else {
+              bw <- params$hetero_base_w %||% 1
+              amp <- params$hetero_amplitude %||% 0.5
+              per <- params$hetero_period %||% 12
+              sprintf("make_gen_hetero%s(shape = \"periodic\", base_w = %s, amplitude = %s, period = %s, sd = %s)",
+                      suffix, .fmt_log_value(bw), .fmt_log_value(amp),
+                      .fmt_log_value(per), .fmt_log_value(sd_val))
+            }
+          }
+        },
+        sprintf("make_gen_<unknown>(label = %s, params = %s)",
+                .fmt_log_value(innov_label), .fmt_log_value(params))
+      )
+    }
+
+    .log_cell_calls <- function(ctx, phi_val, n_val, innov_label, innov_params, use_vara, vara) {
+      .log_line(sprintf("  Calls for Cell %d/%d:", ctx$cell_idx, ctx$n_cells))
+      if (isTRUE(use_vara)) {
+        .log_line("    make_gen_* call: (not used; Normal with default variance path)")
+        .log_line(sprintf("    gen_aruma_flex(n = %s, phi = %s, vara = %s, plot = FALSE)$y",
+                          .fmt_log_value(as.integer(n_val)), .fmt_log_value(phi_val), .fmt_log_value(vara)))
+      } else {
+        .log_line(sprintf("    %s", .format_make_gen_call(innov_label, innov_params, use_fast = ctx$use_fast)))
+        .log_line(sprintf("    gen_aruma_flex(n = %s, phi = %s, innov_gen = <make_gen_*>, plot = FALSE)$y",
+                          .fmt_log_value(as.integer(n_val)), .fmt_log_value(phi_val)))
+      }
+      .log_line(sprintf("    wbg_boot_fast(y, nb = %s, maxp = %s, criterion = %s, bootadj = %s, min_p = %s)",
+                        .fmt_log_value(as.integer(ctx$nb)), .fmt_log_value(as.integer(ctx$maxp)),
+                        .fmt_log_value(ctx$criterion), .fmt_log_value(isTRUE(ctx$bootadj)),
+                        .fmt_log_value(as.integer(ctx$min_p))))
+    }
+
+    .finalize_run <- function(cancelled = FALSE) {
+      ctx <- run_state$ctx
+      if (!is.null(ctx)) {
+        # Publish accumulated results at run boundary (completion or cancel)
+        if (!is.null(ctx$accum_results)) run_results_rv(ctx$accum_results)
+        if (!is.null(ctx$accum_raw)) raw_results_rv(ctx$accum_raw)
+
+        total_elapsed <- proc.time()[["elapsed"]] - ctx$t_total_start
+        if (isTRUE(cancelled)) {
+          .log_line(sprintf("Run cancelled at scenario boundary: %d/%d completed (%.1f s total)",
+                            ctx$cells_ok, ctx$n_cells, total_elapsed))
+          showNotification(
+            sprintf("Run cancelled after %d/%d cells (%.0f s)",
+                    ctx$cells_ok, ctx$n_cells, total_elapsed),
+            type = "warning", duration = 8, session = session)
+        } else {
+          .log_line(sprintf("Grid complete: %d OK, %d errors, %.1f s total",
+                            ctx$cells_ok, ctx$cells_err, total_elapsed))
+          showNotification(
+            sprintf("Completed %d/%d cells in %.0f s",
+                    ctx$cells_ok, ctx$n_cells, total_elapsed),
+            type = "message", duration = 8, session = session)
+        }
+      }
+
+      if (!is.null(run_state$waiter)) {
+        try(run_state$waiter$hide(), silent = TRUE)
+      }
+      if (!is.null(run_state$toast_id)) {
+        try(removeNotification(run_state$toast_id, session = session), silent = TRUE)
+      }
+      run_state$waiter <- NULL
+      run_state$toast_id <- NULL
+      run_state$active <- FALSE
+      run_state$cancel_requested <- FALSE
+      run_state$ctx <- NULL
+      .bump_run_status()
+    }
+
+    .run_next_cell <- function() {
+      if (!isTRUE(run_state$active)) return(invisible(NULL))
+      ctx <- run_state$ctx
+      if (is.null(ctx)) return(invisible(NULL))
+
+      # Boundary check: cancel before starting next scenario
+      if (isTRUE(run_state$cancel_requested)) {
+        .finalize_run(cancelled = TRUE)
+        return(invisible(NULL))
+      }
+
+      if (ctx$cell_idx > ctx$n_cells) {
+        .finalize_run(cancelled = FALSE)
+        return(invisible(NULL))
+      }
+
+      row_i <- ctx$rows_to_run[ctx$cell_idx]
+      phi_val        <- ctx$grid$phi[row_i]
+      n_val          <- as.integer(ctx$grid$n[row_i])
+      innov_label    <- ctx$grid$innov_label[row_i]
+      innov_dist_str <- ctx$grid$innov_dist_str[row_i]
+      innov_params   <- if (!is.null(ctx$grid$innov_params)) ctx$grid$innov_params[[row_i]] else list()
+
+      .show_run_toast(detail = sprintf("phi=%.2f, n=%d, %s", phi_val, n_val, innov_dist_str))
+
+      .log_line(sprintf("Cell %d/%d: phi=%.2f n=%d %s",
+                        ctx$cell_idx, ctx$n_cells, phi_val, n_val, innov_dist_str))
+
+      # Build innovation generator
+      use_vara <- FALSE
+      vara <- NULL
+      innov_gen <- NULL
+
+      if (innov_label == "Normal" && length(innov_params) == 0) {
+        use_vara <- TRUE
+        vara <- 1 - phi_val^2
+      } else {
+        innov_gen <- tryCatch(
+          build_innov_gen(innov_label, innov_params, use_fast = ctx$use_fast),
+          error = function(e) {
+            .log_line(sprintf("  Generator error: %s", e$message))
+            NULL
+          }
+        )
+        if (is.null(innov_gen) && !use_vara) {
+          .log_line("  SKIPPED (generator failed)")
+          ctx$cells_err <- ctx$cells_err + 1L
+          ctx$cell_idx <- ctx$cell_idx + 1L
+          ctx <- .ctx_with_latest_logs(ctx)
+          run_state$ctx <- ctx
+          .show_run_toast()
+          .bump_run_status()
+          later::later(function() {
+            shiny::withReactiveDomain(session, .run_next_cell())
+          }, delay = 0)
+          return(invisible(NULL))
+        }
+      }
+
+      .log_cell_calls(ctx, phi_val, n_val, innov_label, innov_params, use_vara, vara)
+
+      if (!is.null(ctx$base_seed) && !is.na(ctx$base_seed)) {
+        set.seed(as.integer(ctx$base_seed) * 10000L + row_i)
+      }
+
+      results_list <- vector("list", ctx$nsims)
+      failed_count <- 0L
+      t_cell_start <- proc.time()[["elapsed"]]
+
+      for (i in seq_len(ctx$nsims)) {
+        y <- tryCatch({
+          if (use_vara) {
+            gen_aruma_flex(n_val, phi = phi_val, vara = vara, plot = FALSE)$y
+          } else {
+            gen_aruma_flex(n_val, phi = phi_val, innov_gen = innov_gen, plot = FALSE)$y
+          }
+        }, error = function(e) NULL)
+        if (is.null(y)) { failed_count <- failed_count + 1L; next }
+
+        results_list[[i]] <- tryCatch(
+          wbg_boot_fast(y, nb = ctx$nb, maxp = ctx$maxp, criterion = ctx$criterion,
+                        bootadj = ctx$bootadj, min_p = ctx$min_p),
+          error = function(e) { failed_count <<- failed_count + 1L; NULL }
+        )
+      }
+
+      results_list <- Filter(Negate(is.null), results_list)
+      elapsed_cell <- proc.time()[["elapsed"]] - t_cell_start
+
+      if (length(results_list) > 0) {
+        pvals      <- vapply(results_list, function(r) r$pvalue, numeric(1))
+        pvals_asym <- vapply(results_list, function(r) r$pvalue_asymp, numeric(1))
+        pvals_adj  <- vapply(results_list, function(r) {
+          if (is.null(r$pvalue_adj)) NA_real_ else r$pvalue_adj
+        }, numeric(1))
+        n_ok <- length(results_list)
+        .bse <- function(p, nn) sqrt(p * (1 - p) / nn)
+
+        cell_rates <- data.frame(
+          n = n_val, phi = phi_val, innov_dist = innov_dist_str,
+          innov_label = innov_label, n_sims = n_ok,
+          reject_05          = mean(pvals < 0.05, na.rm = TRUE),
+          reject_05_se       = .bse(mean(pvals < 0.05, na.rm = TRUE), n_ok),
+          reject_asymp_05    = mean(pvals_asym < 0.05, na.rm = TRUE),
+          reject_asymp_05_se = .bse(mean(pvals_asym < 0.05, na.rm = TRUE), n_ok),
+          reject_adj_05      = mean(pvals_adj < 0.05, na.rm = TRUE),
+          reject_adj_05_se   = .bse(mean(pvals_adj < 0.05, na.rm = TRUE), n_ok),
+          stringsAsFactors = FALSE
+        )
+        existing <- ctx$accum_results
+        if (nrow(existing) > 0) {
+          dup <- existing$n == n_val &
+            abs(existing$phi - phi_val) < 1e-9 &
+            existing$innov_dist == innov_dist_str
+          existing <- existing[!dup, , drop = FALSE]
+        }
+        ctx$accum_results <- rbind(existing, cell_rates)
+
+        cell_key <- paste(n_val, phi_val, innov_dist_str, sep = "|")
+        raw <- ctx$accum_raw
+        raw[[cell_key]] <- list(
+          results      = results_list,
+          n            = n_val,
+          phi          = phi_val,
+          innov_dist   = innov_dist_str,
+          innov_label  = innov_label,
+          innov_params = innov_params,
+          use_fast     = ctx$use_fast,
+          timestamp    = Sys.time()
+        )
+        ctx$accum_raw <- raw
+      }
+
+      .log_line(sprintf("  Completed %d/%d sims in %.1f s%s",
+                        length(results_list), ctx$nsims, elapsed_cell,
+                        if (failed_count > 0) sprintf(" (%d failed)", failed_count) else ""))
+
+      ctx$cells_ok <- ctx$cells_ok + 1L
+      ctx$cell_idx <- ctx$cell_idx + 1L
+      ctx <- .ctx_with_latest_logs(ctx)
+      run_state$ctx <- ctx
+      .show_run_toast()
+      .bump_run_status()
+
+      later::later(function() {
+        shiny::withReactiveDomain(session, .run_next_cell())
+      }, delay = 0)
+      invisible(NULL)
+    }
+
+    observeEvent(input$cancel_run_toast, {
+      if (!isTRUE(run_state$active)) {
+        return()
+      }
+      run_state$cancel_requested <- TRUE
+      .show_run_toast()
+      .bump_run_status()
+      showNotification("Stop requested. Current scenario will finish first.",
+                       type = "warning", duration = 4)
+      .log_line("Stop requested: will cancel at next scenario boundary.")
+    }, ignoreInit = TRUE)
+
     observeEvent(input$run_grid, {
+      if (isTRUE(run_state$active)) {
+        showNotification("A run is already in progress.", type = "warning", duration = 3)
+        return()
+      }
+
       grid <- grid_rv()
       if (nrow(grid) == 0) {
         showNotification("Grid is empty. Load a preset or add rows.", type = "warning")
@@ -485,232 +1308,48 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
       criterion <- match.arg(input$criterion, c("aic", "aicc", "bic"))
       bootadj   <- isTRUE(input$bootadj)
       min_p     <- if (isTRUE(input$minp1)) 1L else 0L
+      use_fast  <- isTRUE(input$use_fast)
       base_seed <- input$seed
-      label     <- trimws(input$batch_label %||% "")
-      if (!nzchar(label)) label <- NULL
 
-      # Initialize log
-      log_lines <- character(0)
-      .log <- function(msg) {
-        log_lines <<- c(log_lines,
-          sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), msg))
-        run_log_rv(paste(log_lines, collapse = "\n"))
-      }
-      run_log_rv("")
-      .log(sprintf("Starting grid simulation: %d cells, %d sims each",
-                    length(rows_to_run), nsims))
-
-      # Determine DB save path (may be empty → run without saving)
-      save_path <- trimws(input$db_save_path %||% "")
-      save_to_db <- nzchar(save_path)
-
-      # Prevent overwriting the loaded (read-only) database
-      if (save_to_db && !is.null(loaded_db_path) &&
-          normalizePath(save_path, mustWork = FALSE) ==
-          normalizePath(loaded_db_path, mustWork = FALSE)) {
-        showNotification(
-          "Cannot save to the loaded database (read-only). Enter a different path.",
-          type = "error", duration = 8)
+      run_errs <- .validate_run_params(nsims = nsims, nb = nb, maxp = maxp, seed = base_seed)
+      if (length(run_errs) > 0) {
+        showNotification(paste(run_errs, collapse = " "), type = "error", duration = 6)
         return()
       }
 
-      write_con <- NULL
-      batch_id <- NULL
+      run_state$waiter <- NULL
 
-      if (save_to_db) {
-        write_con <- tryCatch(
-          mc_db_connect(save_path, read_only = FALSE),
-          error = function(e) {
-            showNotification(paste("DB connection error:", e$message),
-                             type = "error", duration = 8)
-            NULL
-          }
-        )
-        if (is.null(write_con)) return()
-        on.exit(DBI::dbDisconnect(write_con, shutdown = TRUE), add = TRUE)
+      run_log_rv("")
+      run_state$ctx <- list(
+        grid = grid,
+        rows_to_run = rows_to_run,
+        n_cells = length(rows_to_run),
+        cell_idx = 1L,
+        nsims = nsims,
+        nb = nb,
+        maxp = maxp,
+        criterion = criterion,
+        bootadj = bootadj,
+        min_p = min_p,
+        use_fast = use_fast,
+        base_seed = base_seed,
+        cells_ok = 0L,
+        cells_err = 0L,
+        t_total_start = proc.time()[["elapsed"]],
+        log_lines = character(0),
+        accum_results = run_results_rv(),
+        accum_raw = raw_results_rv()
+      )
+      run_state$cancel_requested <- FALSE
+      run_state$active <- TRUE
+      .show_run_toast()
+      .bump_run_status()
 
-        mc_db_init(write_con)
-        batch_id <- .mc_create_batch(write_con, label = label)
-        .log(sprintf("Created batch #%d ('%s') in %s", batch_id,
-                      label %||% "", save_path))
-      } else {
-        .log("Running without DB save (no path specified)")
-      }
-
-      n_cells <- length(rows_to_run)
-      t_total_start <- proc.time()[["elapsed"]]
-      cells_ok <- 0L
-      cells_err <- 0L
-
-      withProgress(message = "Running capstone grid...", value = 0, {
-
-        for (cell_idx in seq_along(rows_to_run)) {
-          row_i <- rows_to_run[cell_idx]
-          phi_val        <- grid$phi[row_i]
-          n_val          <- as.integer(grid$n[row_i])
-          innov_label    <- grid$innov_label[row_i]
-          innov_dist_str <- grid$innov_dist_str[row_i]
-          innov_params   <- if (!is.null(grid$innov_params))
-                              grid$innov_params[[row_i]] else list()
-
-          incProgress(0, detail = sprintf("Cell %d/%d: phi=%.2f, n=%d, %s",
-                                           cell_idx, n_cells, phi_val, n_val,
-                                           innov_dist_str))
-          .log(sprintf("Cell %d/%d: phi=%.2f n=%d %s",
-                       cell_idx, n_cells, phi_val, n_val, innov_dist_str))
-
-          # Build innovation generator
-          use_vara <- FALSE
-          innov_gen <- NULL
-
-          if (innov_label == "Normal" && length(innov_params) == 0) {
-            # Match Rmd: innov_gen=NULL, vara=1-phi^2 for Normal scenario
-            use_vara <- TRUE
-            vara <- 1 - phi_val^2
-          } else {
-            innov_gen <- tryCatch(
-              build_innov_gen(innov_label, innov_params),
-              error = function(e) {
-                .log(sprintf("  Generator error: %s", e$message))
-                NULL
-              }
-            )
-            if (is.null(innov_gen) && !use_vara) {
-              .log("  SKIPPED (generator failed)")
-              cells_err <- cells_err + 1L
-              incProgress(1 / n_cells)
-              next
-            }
-          }
-
-          # Cell-specific seed for reproducibility
-          if (!is.null(base_seed) && !is.na(base_seed)) {
-            set.seed(as.integer(base_seed) * 10000L + row_i)
-          }
-
-          # Inner simulation loop
-          results_list <- vector("list", nsims)
-          failed_count <- 0L
-          t_cell_start <- proc.time()[["elapsed"]]
-
-          for (i in seq_len(nsims)) {
-            # Generate series
-            y <- tryCatch({
-              if (use_vara) {
-                gen_aruma_flex(n_val, phi = phi_val, vara = vara,
-                               plot = FALSE)$y
-              } else {
-                gen_aruma_flex(n_val, phi = phi_val, innov_gen = innov_gen,
-                               plot = FALSE)$y
-              }
-            }, error = function(e) NULL)
-            if (is.null(y)) { failed_count <- failed_count + 1L; next }
-
-            # Bootstrap test
-            results_list[[i]] <- tryCatch(
-              wbg_boot_fast(y, nb = nb, maxp = maxp, criterion = criterion,
-                            bootadj = bootadj, min_p = min_p),
-              error = function(e) { failed_count <<- failed_count + 1L; NULL }
-            )
-          }
-
-          # Remove NULLs from failed iterations
-          results_list <- Filter(Negate(is.null), results_list)
-          elapsed_cell <- proc.time()[["elapsed"]] - t_cell_start
-
-          # Compute and store in-memory rejection rates
-          if (length(results_list) > 0) {
-            pvals      <- vapply(results_list, function(r) r$pvalue, numeric(1))
-            pvals_asym <- vapply(results_list, function(r) r$pvalue_asymp, numeric(1))
-            pvals_adj  <- vapply(results_list, function(r) {
-              if (is.null(r$pvalue_adj)) NA_real_ else r$pvalue_adj
-            }, numeric(1))
-            n_ok <- length(results_list)
-            .bse <- function(p, nn) sqrt(p * (1 - p) / nn)
-
-            cell_rates <- data.frame(
-              n = n_val, phi = phi_val, innov_dist = innov_dist_str,
-              innov_label = innov_label, n_sims = n_ok,
-              reject_05          = mean(pvals < 0.05, na.rm = TRUE),
-              reject_05_se       = .bse(mean(pvals < 0.05, na.rm = TRUE), n_ok),
-              reject_asymp_05    = mean(pvals_asym < 0.05, na.rm = TRUE),
-              reject_asymp_05_se = .bse(mean(pvals_asym < 0.05, na.rm = TRUE), n_ok),
-              reject_adj_05      = mean(pvals_adj < 0.05, na.rm = TRUE),
-              reject_adj_05_se   = .bse(mean(pvals_adj < 0.05, na.rm = TRUE), n_ok),
-              stringsAsFactors = FALSE
-            )
-            # Dedup: replace prior run of same cell
-            existing <- run_results_rv()
-            if (nrow(existing) > 0) {
-              dup <- existing$n == n_val &
-                     abs(existing$phi - phi_val) < 1e-9 &
-                     existing$innov_dist == innov_dist_str
-              existing <- existing[!dup, , drop = FALSE]
-            }
-            run_results_rv(rbind(existing, cell_rates))
-
-            # Store raw results for detail sub-tabs
-            cell_key <- paste(n_val, phi_val, innov_dist_str, sep = "|")
-            raw <- raw_results_rv()
-            raw[[cell_key]] <- list(
-              results      = results_list,
-              n            = n_val,
-              phi          = phi_val,
-              innov_dist   = innov_dist_str,
-              innov_label  = innov_label,
-              innov_params = innov_params,
-              timestamp    = Sys.time()
-            )
-            raw_results_rv(raw)
-          }
-
-          # Write cell to DB (if saving)
-          if (!is.null(write_con)) {
-            tryCatch({
-              mc_db_write_batch(write_con, results_list, batch_id,
-                                n = n_val, phi = phi_val,
-                                innov_dist = innov_dist_str)
-              .log(sprintf("  Saved %d/%d sims in %.1f s%s",
-                           length(results_list), nsims, elapsed_cell,
-                           if (failed_count > 0)
-                             sprintf(" (%d failed)", failed_count) else ""))
-              cells_ok <- cells_ok + 1L
-            }, error = function(e) {
-              .log(sprintf("  WRITE ERROR: %s", e$message))
-              cells_err <<- cells_err + 1L
-            })
-          } else {
-            .log(sprintf("  Completed %d/%d sims in %.1f s (not saved)%s",
-                         length(results_list), nsims, elapsed_cell,
-                         if (failed_count > 0)
-                           sprintf(" (%d failed)", failed_count) else ""))
-            cells_ok <- cells_ok + 1L
-          }
-
-          incProgress(1 / n_cells,
-                      detail = sprintf("Completed %d/%d", cell_idx, n_cells))
-        }
-      })
-
-      total_elapsed <- proc.time()[["elapsed"]] - t_total_start
-
-      if (save_to_db) {
-        .log(sprintf("Grid complete: %d OK, %d errors, %.1f s total (batch #%d)",
-                      cells_ok, cells_err, total_elapsed, batch_id))
-        # Trigger DB refresh for all tabs
-        db_refresh_trigger(db_refresh_trigger() + 1L)
-        showNotification(
-          sprintf("Completed %d/%d cells. Batch #%d saved. (%.0f s)",
-                  cells_ok, n_cells, batch_id, total_elapsed),
-          type = "message", duration = 8)
-      } else {
-        .log(sprintf("Grid complete: %d OK, %d errors, %.1f s total (not saved)",
-                      cells_ok, cells_err, total_elapsed))
-        showNotification(
-          sprintf("Completed %d/%d cells in %.0f s (results not saved to DB)",
-                  cells_ok, n_cells, total_elapsed),
-          type = "message", duration = 8)
-      }
+      .log_line(sprintf("Starting grid simulation: %d cells, %d sims each",
+                        length(rows_to_run), nsims))
+      later::later(function() {
+        shiny::withReactiveDomain(session, .run_next_cell())
+      }, delay = 0)
     })
 
     # =========================================================================
@@ -718,11 +1357,25 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
     # =========================================================================
 
     output$run_status_ui <- renderUI({
+      run_status_tick()
       grid <- grid_rv()
       n_cells <- nrow(grid)
       if (n_cells == 0) {
         return(p(class = "text-body-secondary", "No cells in grid."))
       }
+
+      if (isTRUE(run_state$active) && !is.null(run_state$ctx)) {
+        ctx <- run_state$ctx
+        current <- min(ctx$cell_idx, ctx$n_cells)
+        status_msg <- sprintf("Running %d/%d scenarios (%s sims each)",
+                              current, ctx$n_cells,
+                              format(ctx$nsims, big.mark = ","))
+        if (isTRUE(run_state$cancel_requested)) {
+          status_msg <- paste0(status_msg, " - stop requested")
+        }
+        return(tagList(p(class = "text-warning", status_msg)))
+      }
+
       n_sel <- length(input$grid_table_rows_selected)
       to_run <- if (input$run_mode == "selected") n_sel else n_cells
       nsims <- input$nsims %||% 1000
@@ -739,52 +1392,11 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
     })
 
     # =========================================================================
-    # Combined results: in-memory + DB (in-memory takes priority)
+    # Combined results: in-memory only
     # =========================================================================
 
     cap_combined_results <- reactive({
-      mem <- run_results_rv()
-      db_refresh_trigger()
-
-      # Try to read DB rates (shared con -> save_path fallback)
-      db_rates <- data.frame()
-      read_con <- con
-      own_con <- FALSE
-      if (is.null(read_con)) {
-        save_path <- trimws(input$db_save_path %||% "")
-        if (nzchar(save_path) && file.exists(save_path)) {
-          read_con <- tryCatch(mc_db_connect(save_path, read_only = TRUE),
-                               error = function(e) NULL)
-          own_con <- TRUE
-        }
-      }
-      if (!is.null(read_con)) {
-        if (own_con) on.exit(DBI::dbDisconnect(read_con, shutdown = TRUE))
-        db_rates <- tryCatch(
-          DBI::dbGetQuery(read_con, "SELECT * FROM v_rejection_rates"),
-          error = function(e) data.frame())
-      }
-
-      if (nrow(db_rates) == 0) return(mem)
-
-      # Align DB columns to in-memory schema
-      db_rates$innov_label <- db_rates$innov_dist
-      target_cols <- c("n", "phi", "innov_dist", "innov_label", "n_sims",
-                       "reject_05", "reject_05_se",
-                       "reject_asymp_05", "reject_asymp_05_se",
-                       "reject_adj_05", "reject_adj_05_se")
-      db_rates <- db_rates[, intersect(target_cols, names(db_rates)), drop = FALSE]
-
-      if (nrow(mem) == 0) return(db_rates)
-
-      # In-memory takes priority: remove DB rows that overlap
-      keep_db <- !vapply(seq_len(nrow(db_rates)), function(i) {
-        any(mem$n == db_rates$n[i] &
-            abs(mem$phi - db_rates$phi[i]) < 1e-9 &
-            mem$innov_dist == db_rates$innov_dist[i])
-      }, logical(1))
-      db_extra <- db_rates[keep_db, , drop = FALSE]
-      if (nrow(db_extra) > 0) rbind(mem, db_extra) else mem
+      run_results_rv()
     })
 
     # =========================================================================
@@ -792,122 +1404,30 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
     # =========================================================================
 
     # Return list of wbg_boot_fast results for a cell_key "n|phi|innov_dist".
-    # Checks in-memory first, falls back to DB query.
+    # In-memory only.
     cap_sim_data <- function(cell_key) {
       if (is.null(cell_key) || !nzchar(cell_key)) return(NULL)
-      # Check in-memory first
       raw <- raw_results_rv()
       if (cell_key %in% names(raw)) return(raw[[cell_key]]$results)
-
-      # Fall back to DB
-      parts <- strsplit(cell_key, "\\|")[[1]]
-      if (length(parts) != 3) return(NULL)
-      read_con <- con
-      own_con <- FALSE
-      if (is.null(read_con)) {
-        save_path <- trimws(input$db_save_path %||% "")
-        if (nzchar(save_path) && file.exists(save_path)) {
-          read_con <- tryCatch(mc_db_connect(save_path, read_only = TRUE),
-                               error = function(e) NULL)
-          own_con <- TRUE
-        }
-      }
-      if (is.null(read_con)) return(NULL)
-      if (own_con) on.exit(DBI::dbDisconnect(read_con, shutdown = TRUE))
-
-      db_sims <- tryCatch(
-        DBI::dbGetQuery(read_con,
-          "SELECT obs_stat, boot_dist, pvalue, pvalue_upper, pvalue_lower,
-                  pvalue_asymp, pvalue_adj, null_ar_order, null_ar_phi, null_vara
-           FROM simulations WHERE n = ? AND phi = ? AND innov_dist = ?",
-          params = list(as.integer(parts[1]), as.numeric(parts[2]), parts[3])),
-        error = function(e) data.frame())
-      if (nrow(db_sims) == 0) return(NULL)
-
-      # Convert DB rows to wbg_boot_fast-like lists
-      lapply(seq_len(nrow(db_sims)), function(i) {
-        list(
-          tco_obs       = db_sims$obs_stat[i],
-          boot_tstats   = db_sims$boot_dist[[i]],
-          pvalue        = db_sims$pvalue[i],
-          pvalue_upper  = db_sims$pvalue_upper[i],
-          pvalue_lower  = db_sims$pvalue_lower[i],
-          pvalue_asymp  = db_sims$pvalue_asymp[i],
-          pvalue_adj    = db_sims$pvalue_adj[i],
-          p             = as.integer(db_sims$null_ar_order[i]),
-          phi           = db_sims$null_ar_phi[[i]],
-          vara          = db_sims$null_vara[i]
-        )
-      })
+      NULL
     }
 
-    # Available cell keys from both memory and DB
+    # Available cell keys from in-memory results
     cap_cell_choices <- reactive({
       raw <- raw_results_rv()
-      mem_keys <- names(raw)
-
-      db_keys <- character(0)
-      read_con <- con
-      own_con <- FALSE
-      if (is.null(read_con)) {
-        save_path <- trimws(input$db_save_path %||% "")
-        if (nzchar(save_path) && file.exists(save_path)) {
-          read_con <- tryCatch(mc_db_connect(save_path, read_only = TRUE),
-                               error = function(e) NULL)
-          own_con <- TRUE
-        }
-      }
-      if (!is.null(read_con)) {
-        if (own_con) on.exit(DBI::dbDisconnect(read_con, shutdown = TRUE))
-        db_configs <- tryCatch(
-          DBI::dbGetQuery(read_con,
-            "SELECT DISTINCT n, phi, innov_dist FROM simulations
-             ORDER BY innov_dist, n, phi"),
-          error = function(e) data.frame())
-        if (nrow(db_configs) > 0) {
-          db_keys <- paste(db_configs$n, db_configs$phi,
-                           db_configs$innov_dist, sep = "|")
-        }
-      }
-
-      all_keys <- unique(c(mem_keys, db_keys))
+      all_keys <- names(raw)
       if (length(all_keys) == 0) return(character(0))
       labels <- gsub("\\|", ", ", all_keys)
       setNames(all_keys, labels)
     })
 
-    # Return raw entry metadata for a cell (innov_label, innov_params, etc.)
-    cap_cell_meta <- function(cell_key) {
-      raw <- raw_results_rv()
-      if (cell_key %in% names(raw)) {
-        entry <- raw[[cell_key]]
-        return(list(innov_label = entry$innov_label,
-                    innov_params = entry$innov_params,
-                    n = entry$n, phi = entry$phi,
-                    innov_dist = entry$innov_dist))
-      }
-      # DB fallback: parse key
-      parts <- strsplit(cell_key, "\\|")[[1]]
-      if (length(parts) == 3) {
-        return(list(innov_label = parts[3], innov_params = list(),
-                    n = as.integer(parts[1]), phi = as.numeric(parts[2]),
-                    innov_dist = parts[3]))
-      }
-      NULL
-    }
-
     # =========================================================================
     # Sub-tab server fragments
     # =========================================================================
 
-    # Reactive wrapper for db_save_path input (needed by overview module)
-    db_save_path_reactive <- reactive({ input$db_save_path })
-
     # Tab 2: Coverage / Overview
     mod_capstone_overview_server(input, output, session,
-      con = con, grid_rv = grid_rv, raw_results_rv = raw_results_rv,
-      db_refresh_trigger = db_refresh_trigger,
-      db_save_path_input = db_save_path_reactive)
+      grid_rv = grid_rv, raw_results_rv = raw_results_rv)
 
     # Tab 3: Individual Results (returns selected row for Bootstrap tab)
     selected_sim_rv <- mod_capstone_individual_server(input, output, session,
@@ -931,12 +1451,9 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
         criterion = input$criterion %||% "aic",
         bootadj   = isTRUE(input$bootadj),
         min_p     = if (isTRUE(input$minp1)) 1L else 0L,
+        use_fast  = isTRUE(input$use_fast),
         base_seed = input$seed
       )))
-
-    # Tab 6: Plots
-    mod_capstone_plots_server(input, output, session,
-      cap_combined_results = cap_combined_results)
 
     # Tab 6: P-value Diagnostics
     mod_capstone_pvalue_server(input, output, session,
@@ -947,14 +1464,9 @@ mod_capstone_server <- function(id, con, db_path, db_refresh_trigger,
       cap_sim_data = cap_sim_data, cap_cell_choices = cap_cell_choices,
       selected_sim_from_individual = selected_sim_rv)
 
-    # Tab 8: Innovation Diagnostics
-    mod_capstone_innov_diag_server(input, output, session,
-      cap_cell_choices = cap_cell_choices, cap_cell_meta = cap_cell_meta)
-
-    # Tab 9: Null Model Diagnostics
+    # Tab 8: Null Model Diagnostics
     mod_capstone_null_diag_server(input, output, session,
-      cap_sim_data = cap_sim_data, cap_cell_choices = cap_cell_choices,
-      con = con, db_refresh_trigger = db_refresh_trigger)
+      cap_sim_data = cap_sim_data, cap_cell_choices = cap_cell_choices)
 
   })
 }

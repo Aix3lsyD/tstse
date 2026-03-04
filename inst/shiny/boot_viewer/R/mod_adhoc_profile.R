@@ -34,7 +34,15 @@ mod_adhoc_profile_ui <- function(ns) {
             numericInput(ns("prof_maxp"), "maxp", value = 5, min = 1, max = 20)
           )
         ),
-        column(3,
+        column(2,
+          checkboxInput(ns("prof_early_stop"), "Early Stopping",
+                        value = FALSE)
+        ),
+        column(2,
+          checkboxInput(ns("prof_use_fast"), "Use fast generators",
+                        value = FALSE)
+        ),
+        column(2,
           div(style = "margin-top: 25px;",
             actionButton(ns("prof_run"), "Run Profile",
                          icon = icon("stopwatch"), class = "btn-sm btn-info"))
@@ -88,13 +96,23 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
 
   # Resolve params: either from ad-hoc inputs or local overrides
   .get_profile_params <- function() {
+    use_fast <- isTRUE(input$prof_use_fast)
+    dist <- input$sim_innov_dist
+    innov_gen <- tryCatch(
+      build_innov_gen(dist, .adhoc_params_from_input(input), use_fast = use_fast),
+      error = function(e) NULL)
+
     if (isTRUE(input$prof_use_current)) {
-      adhoc_params()
+      base <- adhoc_params()
+      base$innov_gen <- innov_gen
+      base$use_fast <- use_fast
+      base
     } else {
       list(
         n         = as.integer(input$prof_n %||% 200),
         phi       = adhoc_params()$phi,
-        innov_gen = adhoc_params()$innov_gen,
+        innov_gen = innov_gen,
+        use_fast  = use_fast,
         nb        = as.integer(input$prof_nb %||% 399),
         maxp      = as.integer(input$prof_maxp %||% 5),
         criterion = adhoc_params()$criterion,
@@ -176,7 +194,8 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
     kp <- wbg_profile_kernel_components_cpp(
       n = n_val, phi = phi_null, vara = vara_null,
       seeds = profile_seeds, maxp = maxp_val, criterion = criterion,
-      min_p = as.integer(min_p), coba = isTRUE(bootadj)
+      min_p = as.integer(min_p), coba = isTRUE(bootadj),
+      early_stop = isTRUE(input$prof_early_stop)
     )
 
     # Compute sub-component ratios from sequential profiling
@@ -243,8 +262,8 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
   # Run profile
   observeEvent(input$prof_run, {
     params <- .get_profile_params()
-    if (is.null(params$phi)) {
-      showNotification("Set phi in the ad-hoc parameters first.", type = "warning")
+    if (is.null(params$phi) || is.null(params$innov_gen)) {
+      showNotification("Set valid ad-hoc parameters first.", type = "warning")
       return()
     }
 
@@ -265,8 +284,8 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
   # Run scaling analysis
   observeEvent(input$prof_run_scaling, {
     params <- .get_profile_params()
-    if (is.null(params$phi)) {
-      showNotification("Set phi in the ad-hoc parameters first.", type = "warning")
+    if (is.null(params$phi) || is.null(params$innov_gen)) {
+      showNotification("Set valid ad-hoc parameters first.", type = "warning")
       return()
     }
 

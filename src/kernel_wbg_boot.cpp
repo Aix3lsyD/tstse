@@ -41,7 +41,8 @@ BurgResult burg_aic_select_pure(const arma::vec& x, int maxp, const std::string&
 double co_tstat_ws(const arma::vec& x, int maxp, CriterionType ic_type,
                    CoBootstrapWorkspace& ws, int min_p = 0);
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp, CriterionType ic_type,
-                               CoBootstrapWorkspace& ws, int min_p = 0);
+                               CoBootstrapWorkspace& ws, int min_p = 0,
+                               bool early_stop = false);
 
 
 // =============================================================================

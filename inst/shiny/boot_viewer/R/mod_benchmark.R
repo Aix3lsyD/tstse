@@ -59,7 +59,7 @@ mod_benchmark_ui <- function(id) {
   )
 }
 
-mod_benchmark_server <- function(id, con = NULL) {
+mod_benchmark_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     scenario_maxp <- 5L
 
@@ -245,7 +245,7 @@ mod_benchmark_server <- function(id, con = NULL) {
           out_rows[[i]] <- data.frame(
             method = m$label,
             total_elapsed_sec = elapsed_total,
-            avg_elapsed_sec = elapsed_total / nsims,
+            avg_elapsed_sec = if (n_ok > 0L) elapsed_total / n_ok else NA_real_,
             user_sec = user_total,
             system_sec = system_total,
             n_simulations = nsims,

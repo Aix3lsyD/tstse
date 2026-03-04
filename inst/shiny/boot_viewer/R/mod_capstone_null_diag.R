@@ -1,14 +1,13 @@
 # Capstone Sub-Tab: Null Model Diagnostics (Tab 9)
 # AR order distribution, variance distribution, rejection by order,
-# MC convergence, batch consistency, test stat distribution
+# MC convergence, test stat distribution
 
 mod_capstone_null_diag_ui <- function(ns) {
   tabPanel("Null Model Diagnostics",
     br(),
     h4("Null Model & MC Diagnostics"),
     p(class = "text-body-secondary",
-      "Diagnostics for the fitted null models and Monte Carlo machinery. ",
-      "Top section uses per-simulation data; bottom section uses aggregate DB data."),
+      "Diagnostics for fitted null models and Monte Carlo behavior across the selected cell(s)."),
 
     div(class = "plot-controls",
       fluidRow(
@@ -26,54 +25,51 @@ mod_capstone_null_diag_ui <- function(ns) {
     # Per-simulation diagnostics (from raw results)
     wellPanel(
       h5("Null Model Diagnostics (per-simulation)"),
-      plotOutput(ns("ndiag_null_model"), height = "500px")
+      plotOutput(ns("ndiag_null_model"), height = "900px")
     ),
 
-    # ggplot-based diagnostics
-    wellPanel(
-      h5("AR Order Distribution"),
-      plotOutput(ns("ndiag_ar_order"), height = "300px")
-    ),
-    wellPanel(
-      h5("Estimated AR(1) Coefficient Distribution"),
-      plotOutput(ns("ndiag_phi_dist"), height = "300px")
-    ),
-    wellPanel(
-      h5("Test Statistic Distribution"),
-      plotOutput(ns("ndiag_tstat"), height = "300px")
-    ),
-    wellPanel(
-      h5("Monte Carlo Convergence"),
-      fluidRow(
-        column(4,
-          selectInput(ns("ndiag_conv_method"), "Method:",
-                      choices = c("Bootstrap (COB)" = "pvalue",
-                                  "Asymptotic (CO)" = "pvalue_asymp",
-                                  "COBA" = "pvalue_adj"))
+    fluidRow(
+      column(6,
+        wellPanel(
+          h5("AR Order Distribution"),
+          plotOutput(ns("ndiag_ar_order"), height = "420px")
         )
       ),
-      plotOutput(ns("ndiag_convergence"), height = "350px")
+      column(6,
+        wellPanel(
+          h5("Estimated AR(1) Coefficient Distribution"),
+          plotOutput(ns("ndiag_phi_dist"), height = "420px")
+        )
+      )
     ),
-    wellPanel(
-      h5("Batch-to-Batch Consistency"),
-      p(class = "text-body-secondary", style = "margin-bottom: 10px;",
-        "Requires DB with multiple batches."),
-      fluidRow(
-        column(4,
-          selectInput(ns("ndiag_batch_method"), "Method:",
-                      choices = c("Bootstrap (COB)" = "reject_05",
-                                  "Asymptotic (CO)" = "reject_asymp_05",
-                                  "COBA" = "reject_adj_05"))
+
+    fluidRow(
+      column(6,
+        wellPanel(
+          h5("Test Statistic Distribution"),
+          plotOutput(ns("ndiag_tstat"), height = "420px")
         )
       ),
-      plotOutput(ns("ndiag_batch_plot"), height = "350px")
+      column(6,
+        wellPanel(
+          h5("Monte Carlo Convergence"),
+          fluidRow(
+            column(12,
+              selectInput(ns("ndiag_conv_method"), "Method:",
+                          choices = c("Bootstrap (COB)" = "pvalue",
+                                      "Asymptotic (CO)" = "pvalue_asymp",
+                                      "COBA" = "pvalue_adj"))
+            )
+          ),
+          plotOutput(ns("ndiag_convergence"), height = "420px")
+        )
+      )
     )
   )
 }
 
 mod_capstone_null_diag_server <- function(input, output, session,
-                                          cap_sim_data, cap_cell_choices,
-                                          con, db_refresh_trigger) {
+                                          cap_sim_data, cap_cell_choices) {
 
   observe({
     ch <- cap_cell_choices()
@@ -198,22 +194,4 @@ mod_capstone_null_diag_server <- function(input, output, session,
     if (!is.null(p)) print(p)
   })
 
-  # Batch consistency (requires DB)
-  output$ndiag_batch_plot <- renderPlot(bg = "transparent", {
-    if (is.null(con)) {
-      plot.new(); text(0.5, 0.5, "Requires database connection", cex = 1.2,
-                       col = viewer_plot_fg()); return()
-    }
-    db_refresh_trigger()
-    rate_col <- input$ndiag_batch_method %||% "reject_05"
-    df <- tryCatch(
-      DBI::dbGetQuery(con, "SELECT * FROM v_rejection_rates_by_batch ORDER BY innov_dist, n, phi"),
-      error = function(e) data.frame())
-    if (nrow(df) == 0 || !rate_col %in% names(df)) {
-      plot.new(); text(0.5, 0.5, "No per-batch data available", cex = 1.2,
-                       col = viewer_plot_fg()); return()
-    }
-    p <- plot_batch_consistency(df, rate_col = rate_col)
-    if (!is.null(p)) print(p)
-  })
 }

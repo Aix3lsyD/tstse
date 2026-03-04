@@ -16,15 +16,7 @@ mod_adhoc_sim_ui <- function(id) {
         wellPanel(
           h4("Run"),
           actionButton(ns("sim_run"), "Run Simulation",
-                       icon = icon("play"), class = "btn-primary btn-block"),
-          hr(),
-          checkboxInput(ns("sim_save_db"), "Save to DB", value = FALSE),
-          conditionalPanel(
-            condition = "input.sim_save_db == true",
-            ns = ns,
-            textInput(ns("sim_batch_label"), "Batch Label", value = ""),
-            uiOutput(ns("sim_save_btn_ui"))
-          )
+                       icon = icon("play"), class = "btn-primary btn-block")
         ),
 
         wellPanel(
@@ -148,8 +140,10 @@ mod_adhoc_sim_ui <- function(id) {
           checkboxInput(ns("sim_bootadj"), "COBA Adjustment", value = FALSE),
           checkboxInput(ns("sim_minp1"), "Minimum AR order = 1 (exclude AR(0))",
                         value = TRUE),
+          checkboxInput(ns("sim_use_fast"), "Use fast innovation generators",
+                        value = FALSE),
           numericInput(ns("sim_seed"), "Random Seed (empty = random)",
-                       value = NA, min = 1, step = 1)
+                        value = NA, min = 1, step = 1)
         )
       ),
 
@@ -184,6 +178,10 @@ mod_adhoc_sim_ui <- function(id) {
             br(),
             plotOutput(ns("sim_null_diag"), height = "900px")
           ),
+          tabPanel("Run Log",
+            br(),
+            verbatimTextOutput(ns("sim_run_log"))
+          ),
           mod_adhoc_profile_ui(ns)
         )
       )
@@ -193,14 +191,12 @@ mod_adhoc_sim_ui <- function(id) {
 
 #' @description Server function for the Ad-Hoc Simulation module.
 #' @param id Character string module namespace ID.
-#' @param con Reactive or static DuckDB connection (read-only, for reference).
-#' @param db_path Character string path to the DuckDB database file (used for
-#'   write operations when saving results).
-mod_adhoc_sim_server <- function(id, con, db_path) {
+mod_adhoc_sim_server <- function(id) {
   moduleServer(id, function(input, output, session) {
 
     # Storage for simulation results
     sim_results_rv <- reactiveVal(NULL)
+    run_log_rv <- reactiveVal("")
 
     # Helper: build innov_dist string from selection and params
     # Delegates to shared helpers in utils.R via .adhoc_params_from_input()
@@ -208,8 +204,151 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
       build_innov_dist_str(dist, .adhoc_params_from_input(input))
     }
 
-    .build_innov_gen <- function(dist, input) {
-      build_innov_gen(dist, .adhoc_params_from_input(input))
+    .build_innov_gen <- function(dist, input, use_fast = FALSE) {
+      build_innov_gen(dist, .adhoc_params_from_input(input), use_fast = use_fast)
+    }
+
+    .log_line <- function(msg) {
+      old <- run_log_rv()
+      line <- sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), msg)
+      run_log_rv(paste(c(old, line), collapse = if (nzchar(old)) "\n" else ""))
+    }
+
+    .fmt_log_value <- function(x) {
+      if (is.function(x)) return("<function>")
+      txt <- paste(deparse(x, width.cutoff = 500L), collapse = "")
+      if (nchar(txt) > 240) txt <- paste0(substr(txt, 1, 237), "...")
+      txt
+    }
+
+    .parse_num_list_or_null <- function(x) {
+      if (is.null(x)) return(NULL)
+      vals <- if (is.character(x)) {
+        suppressWarnings(as.numeric(trimws(strsplit(x, ",")[[1]])))
+      } else {
+        suppressWarnings(as.numeric(x))
+      }
+      if (length(vals) == 0 || any(is.na(vals))) return(NULL)
+      vals
+    }
+
+    .format_make_gen_call <- function(dist, params, use_fast) {
+      suffix <- if (isTRUE(use_fast)) "_fast" else ""
+      switch(dist,
+        "Normal" = {
+          sd_val <- params$norm_sd
+          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+          sprintf("make_gen_norm%s(sd = %s)", suffix, .fmt_log_value(sd_val))
+        },
+        "Student's t" = {
+          df_val <- params$t_df
+          if (is.null(df_val) || is.na(df_val) || df_val < 1) df_val <- 3
+          scale_val <- isTRUE(params$t_scale)
+          sprintf("make_gen_t%s(df = %s, scale = %s)",
+                  suffix, .fmt_log_value(df_val), .fmt_log_value(scale_val))
+        },
+        "Skew-t" = {
+          df_val <- params$skt_df
+          if (is.null(df_val) || is.na(df_val) || df_val < 3) df_val <- 5
+          alpha_val <- params$skt_alpha
+          if (is.null(alpha_val) || is.na(alpha_val)) alpha_val <- 0
+          scale_val <- isTRUE(params$skt_scale)
+          sprintf("make_gen_skt%s(df = %s, alpha = %s, scale = %s)",
+                  suffix, .fmt_log_value(df_val), .fmt_log_value(alpha_val), .fmt_log_value(scale_val))
+        },
+        "GED" = {
+          nu_val <- params$ged_nu
+          if (is.null(nu_val) || is.na(nu_val) || nu_val <= 0) nu_val <- 2
+          sd_val <- params$ged_sd
+          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+          sprintf("make_gen_ged%s(nu = %s, sd = %s)",
+                  suffix, .fmt_log_value(nu_val), .fmt_log_value(sd_val))
+        },
+        "Laplace" = {
+          sc <- params$lap_scale
+          if (is.null(sc) || is.na(sc) || sc <= 0) sc <- 1 / sqrt(2)
+          sprintf("make_gen_laplace%s(scale = %s)", suffix, .fmt_log_value(sc))
+        },
+        "Uniform" = {
+          hw <- params$unif_hw
+          if (is.null(hw) || is.na(hw) || hw <= 0) hw <- sqrt(3)
+          sprintf("make_gen_unif%s(half_width = %s)", suffix, .fmt_log_value(hw))
+        },
+        "Mixture Normal" = {
+          sd1 <- params$mix_sd1
+          sd2 <- params$mix_sd2
+          p1 <- params$mix_prob1
+          if (is.null(sd1) || is.na(sd1) || sd1 <= 0) sd1 <- 1
+          if (is.null(sd2) || is.na(sd2) || sd2 <= 0) sd2 <- 3
+          if (is.null(p1) || is.na(p1) || p1 <= 0 || p1 >= 1) p1 <- 0.9
+          sprintf("make_gen_mixnorm%s(sd1 = %s, sd2 = %s, prob1 = %s)",
+                  suffix, .fmt_log_value(sd1), .fmt_log_value(sd2), .fmt_log_value(p1))
+        },
+        "GARCH" = {
+          omega <- params$garch_omega
+          if (is.null(omega) || is.na(omega) || omega <= 0) omega <- 0.1
+          alpha <- .parse_num_list_or_null(params$garch_alpha)
+          if (is.null(alpha) || length(alpha) == 0) {
+            alpha <- c(0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025)
+          }
+          beta <- .parse_num_list_or_null(params$garch_beta)
+          if (is.null(beta)) {
+            sprintf("make_gen_garch%s(omega = %s, alpha = %s, beta = NULL)",
+                    suffix, .fmt_log_value(omega), .fmt_log_value(alpha))
+          } else {
+            sprintf("make_gen_garch%s(omega = %s, alpha = %s, beta = %s)",
+                    suffix, .fmt_log_value(omega), .fmt_log_value(alpha), .fmt_log_value(beta))
+          }
+        },
+        "Heteroscedastic" = {
+          sd_val <- params$hetero_sd
+          if (is.null(sd_val) || is.na(sd_val) || sd_val <= 0) sd_val <- 1
+          shape <- params$hetero_shape %||% "linear"
+          if (shape %in% c("linear", "sqrt", "log", "exp")) {
+            from_val <- params$hetero_from %||% 1
+            to_val <- params$hetero_to %||% 10
+            sprintf("make_gen_hetero%s(shape = %s, from = %s, to = %s, sd = %s)",
+                    suffix, .fmt_log_value(shape), .fmt_log_value(from_val),
+                    .fmt_log_value(to_val), .fmt_log_value(sd_val))
+          } else if (shape == "power") {
+            from_val <- params$hetero_from %||% 1
+            to_val <- params$hetero_to %||% 10
+            p_val <- params$hetero_power %||% 2
+            sprintf("make_gen_hetero%s(shape = \"power\", from = %s, to = %s, power = %s, sd = %s)",
+                    suffix, .fmt_log_value(from_val), .fmt_log_value(to_val),
+                    .fmt_log_value(p_val), .fmt_log_value(sd_val))
+          } else if (shape == "step") {
+            brk <- .parse_num_list_or_null(params$hetero_breaks)
+            lvl <- .parse_num_list_or_null(params$hetero_levels)
+            if (is.null(brk)) brk <- 0.5
+            if (is.null(lvl)) lvl <- c(1, 5)
+            sprintf("make_gen_hetero%s(shape = \"step\", breaks = %s, levels = %s, sd = %s)",
+                    suffix, .fmt_log_value(brk), .fmt_log_value(lvl), .fmt_log_value(sd_val))
+          } else {
+            bw <- params$hetero_base_w %||% 1
+            amp <- params$hetero_amplitude %||% 0.5
+            per <- params$hetero_period %||% 12
+            sprintf("make_gen_hetero%s(shape = \"periodic\", base_w = %s, amplitude = %s, period = %s, sd = %s)",
+                    suffix, .fmt_log_value(bw), .fmt_log_value(amp),
+                    .fmt_log_value(per), .fmt_log_value(sd_val))
+          }
+        },
+        sprintf("make_gen_<unknown>(label = %s)", .fmt_log_value(dist))
+      )
+    }
+
+    .log_call_block <- function(dist, params, use_fast, n, phi, nb, maxp, criterion, bootadj, min_p) {
+      .log_line("Calls for this run:")
+      .log_line(sprintf("  %s", .format_make_gen_call(dist, params, use_fast = use_fast)))
+      .log_line(sprintf(
+        "  gen_aruma_flex(n = %s, phi = %s, innov_gen = <make_gen_*>, seed = NULL, plot = FALSE)$y",
+        .fmt_log_value(as.integer(n)), .fmt_log_value(phi)
+      ))
+      .log_line(sprintf(
+        "  wbg_boot_fast(x, nb = %s, maxp = %s, criterion = %s, bootadj = %s, min_p = %s)",
+        .fmt_log_value(as.integer(nb)), .fmt_log_value(as.integer(maxp)),
+        .fmt_log_value(criterion), .fmt_log_value(isTRUE(bootadj)), .fmt_log_value(as.integer(min_p))
+      ))
     }
 
     # Helper: compute theoretical density for a distribution
@@ -287,20 +426,25 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
 
     # Run simulation
     observeEvent(input$sim_run, {
+      run_log_rv("")
       dist <- input$sim_innov_dist
+      use_fast <- isTRUE(input$sim_use_fast)
 
       # Check optional packages
-      if (dist == "GARCH" && !requireNamespace("rugarch", quietly = TRUE)) {
+      if (!use_fast && dist == "GARCH" && !requireNamespace("rugarch", quietly = TRUE)) {
+        .log_line("Aborted: missing optional package 'rugarch' for GARCH innovations.")
         showNotification("Install the 'rugarch' package to use GARCH innovations.",
                          type = "error", duration = 8)
         return()
       }
-      if (dist == "Skew-t" && !requireNamespace("sn", quietly = TRUE)) {
+      if (!use_fast && dist == "Skew-t" && !requireNamespace("sn", quietly = TRUE)) {
+        .log_line("Aborted: missing optional package 'sn' for Skew-t innovations.")
         showNotification("Install the 'sn' package to use Skew-t innovations.",
                          type = "error", duration = 8)
         return()
       }
-      if (dist == "GED" && !requireNamespace("fGarch", quietly = TRUE)) {
+      if (!use_fast && dist == "GED" && !requireNamespace("fGarch", quietly = TRUE)) {
+        .log_line("Aborted: missing optional package 'fGarch' for GED innovations.")
         showNotification("Install the 'fGarch' package to use GED innovations.",
                          type = "error", duration = 8)
         return()
@@ -332,8 +476,20 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
       seed_val <- input$sim_seed
       has_seed <- !is.null(seed_val) && !is.na(seed_val)
 
+      params_generic <- .adhoc_params_from_input(input)
+      .log_line(sprintf(
+        "Starting ad-hoc simulation: dist=%s, phi=%s, n=%s, nsims=%s, seed=%s",
+        dist,
+        .fmt_log_value(phi),
+        .fmt_log_value(n),
+        .fmt_log_value(nsims),
+        if (has_seed) .fmt_log_value(as.integer(seed_val)) else "<random>"
+      ))
+      .log_call_block(dist, params_generic, use_fast, n, phi, nb, maxp, criterion, bootadj, min_p)
+
       # Build generator
-      innov_gen <- tryCatch(.build_innov_gen(dist, input), error = function(e) {
+      innov_gen <- tryCatch(.build_innov_gen(dist, input, use_fast = use_fast), error = function(e) {
+        .log_line(sprintf("Generator error: %s", e$message))
         showNotification(paste("Error building generator:", e$message),
                          type = "error", duration = 8)
         return(NULL)
@@ -394,18 +550,25 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
 
       # Run simulation loop
       results <- vector("list", nsims)
+      failed_count <- 0L
       update_every <- max(1L, nsims %/% 20L)
       prog_id <- showNotification(
         sprintf("Running simulations... 0 / %d", nsims),
         duration = NULL, closeButton = FALSE, type = "message")
+      on.exit(removeNotification(prog_id), add = TRUE)
       if (has_seed) set.seed(seed_val)
       t_start <- proc.time()[["elapsed"]]
       for (i in seq_len(nsims)) {
-        x <- gen_aruma_flex(n, phi = phi, innov_gen = innov_gen,
-                            seed = NULL, plot = FALSE)$y
-        results[[i]] <- wbg_boot_fast(x, nb = nb, maxp = maxp,
-                                       criterion = criterion,
-                                       bootadj = bootadj, min_p = min_p)
+        results[[i]] <- tryCatch({
+          x <- gen_aruma_flex(n, phi = phi, innov_gen = innov_gen,
+                              seed = NULL, plot = FALSE)$y
+          wbg_boot_fast(x, nb = nb, maxp = maxp,
+                        criterion = criterion,
+                        bootadj = bootadj, min_p = min_p)
+        }, error = function(e) {
+          failed_count <<- failed_count + 1L
+          NULL
+        })
         if (i %% update_every == 0L || i == nsims) {
           showNotification(
             sprintf("Running simulations... %d / %d", i, nsims),
@@ -413,7 +576,13 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         }
       }
       elapsed_secs <- proc.time()[["elapsed"]] - t_start
-      removeNotification(prog_id)
+      results <- Filter(Negate(is.null), results)
+      if (length(results) == 0) {
+        .log_line("All iterations failed. No results to display.")
+        showNotification("All iterations failed. Try adjusting parameters.",
+                         type = "error", duration = 8)
+        return()
+      }
 
       # Generate diagnostic samples (after loop so main results are reproducible)
       innov_sample <- innov_gen(n)
@@ -425,7 +594,7 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         results = results,
         phi = phi,
         n = n,
-        nsims = nsims,
+        nsims = length(results),
         nb = nb,
         maxp = maxp,
         criterion = criterion,
@@ -441,8 +610,15 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         elapsed_secs = elapsed_secs
       ))
 
-      showNotification(sprintf("Completed %d simulations in %.1f s.", nsims, elapsed_secs),
-                       type = "message", duration = 4)
+      showNotification(sprintf("Completed %d/%d simulations in %.1f s.",
+                               length(results), nsims, elapsed_secs),
+                       type = if (failed_count > 0) "warning" else "message",
+                       duration = 4)
+      .log_line(sprintf(
+        "Completed ad-hoc simulation: %d/%d succeeded in %.1f s%s",
+        length(results), nsims, elapsed_secs,
+        if (failed_count > 0) sprintf(" (%d failed)", failed_count) else ""
+      ))
     })
 
     # Summary tab
@@ -651,15 +827,6 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
              col = leg_cols, lwd = leg_lwd, lty = leg_lty, bty = "n")
     })
 
-    # Save button: only visible after simulation completes
-    output$sim_save_btn_ui <- renderUI({
-      res <- sim_results_rv()
-      if (is.null(res)) return(NULL)
-      ns <- session$ns
-      actionButton(ns("sim_save"), "Save Results",
-                   icon = icon("database"), class = "btn-success btn-block")
-    })
-
     # Sample realization plot on Summary tab
     output$sim_realization_plot <- renderPlot(bg = "transparent", {
       res <- sim_results_rv()
@@ -787,9 +954,10 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
 
       # --- Panel 1: AR Order Distribution ---
       order_tbl <- table(factor(ar_orders, levels = 0:res$maxp))
-      order_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
+      base_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
+      order_cols <- grDevices::colorRampPalette(base_cols)(res$maxp + 1)
       barplot(order_tbl,
-              col = order_cols[seq_len(res$maxp + 1)],
+              col = order_cols,
               border = NA,
               main = sprintf("Fitted Null AR Order  (n=%d sims, min_p=%d, maxp=%d)",
                              nsims, res$min_p, res$maxp),
@@ -849,41 +1017,13 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
       }
     })
 
-    # Save to DB
-    observeEvent(input$sim_save, {
-      res <- sim_results_rv()
-      if (is.null(res)) {
-        showNotification("No simulation results to save.", type = "warning")
-        return()
-      }
-
-      label <- trimws(input$sim_batch_label)
-      if (!nzchar(label)) label <- NULL
-
-      tryCatch({
-        write_con <- mc_db_connect(db_path, read_only = FALSE)
-        on.exit(DBI::dbDisconnect(write_con, shutdown = TRUE), add = TRUE)
-        mc_db_init(write_con)
-        batch_id <- .mc_create_batch(write_con, label = label)
-        mc_db_write_batch(write_con, res$results, batch_id,
-                          n = res$n, phi = res$phi,
-                          innov_dist = res$innov_dist_str)
-
-        showNotification(
-          sprintf("Saved %d simulations as batch #%d%s",
-                  res$nsims, batch_id,
-                  if (!is.null(label)) paste0(" (", label, ")") else ""),
-          type = "message", duration = 6)
-      }, error = function(e) {
-        showNotification(paste("Save failed:", e$message),
-                         type = "error", duration = 8)
-      })
-    })
-
     # --- Performance Profile sub-tab ---
     adhoc_params <- reactive({
       dist <- input$sim_innov_dist
-      innov_gen <- tryCatch(.build_innov_gen(dist, input), error = function(e) NULL)
+      use_fast <- isTRUE(input$sim_use_fast)
+      innov_gen <- tryCatch(
+        .build_innov_gen(dist, input, use_fast = use_fast),
+        error = function(e) NULL)
 
       phi <- input$sim_phi
       if (is.null(phi) || is.na(phi)) phi <- 0.95
@@ -893,6 +1033,7 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
         n         = as.integer(input$sim_n %||% 200),
         phi       = phi,
         innov_gen = innov_gen,
+        use_fast  = use_fast,
         nb        = as.integer(input$sim_nb %||% 399),
         maxp      = min(as.integer(input$sim_maxp %||% 5), 20L),
         criterion = match.arg(input$sim_criterion %||% "aic",
@@ -903,6 +1044,11 @@ mod_adhoc_sim_server <- function(id, con, db_path) {
     })
 
     mod_adhoc_profile_server(input, output, session, adhoc_params = adhoc_params)
+
+    output$sim_run_log <- renderText({
+      log_text <- run_log_rv()
+      if (!nzchar(log_text)) "No ad-hoc runs yet." else log_text
+    })
 
   })
 }

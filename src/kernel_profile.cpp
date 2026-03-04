@@ -27,7 +27,8 @@ void gen_ar_into_ws(arma::vec& out, const arma::vec& phi,
 int calc_ar_burnin_cpp(const arma::vec& phi, int n);
 void ols_detrend_ws(const arma::vec& x, CoBootstrapWorkspace& ws);
 BurgResult burg_aic_select_ws(const arma::vec& x, int maxp, CriterionType ic_type,
-                               CoBootstrapWorkspace& ws, int min_p);
+                               CoBootstrapWorkspace& ws, int min_p = 0,
+                               bool early_stop = false);
 double co_tstat_fused(const arma::vec& x, const arma::vec& phi);
 
 
@@ -59,7 +60,8 @@ Rcpp::List wbg_profile_kernel_components_cpp(
     int maxp,
     std::string criterion,
     int min_p,
-    bool coba) {
+    bool coba,
+    bool early_stop = false) {
 
     const int nreps = seeds.size();
     if (nreps < 1) {
@@ -102,7 +104,7 @@ Rcpp::List wbg_profile_kernel_components_cpp(
 
         // 3) Burg AR fit on detrended residuals
         t0 = hrclock::now();
-        BurgResult ar_fit = burg_aic_select_ws(ws.resid, maxp, ic_type, ws, min_p);
+        BurgResult ar_fit = burg_aic_select_ws(ws.resid, maxp, ic_type, ws, min_p, early_stop);
         t1 = hrclock::now();
         acc_burg += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
 
@@ -115,7 +117,7 @@ Rcpp::List wbg_profile_kernel_components_cpp(
         // 5) COBA: second Burg fit on bootstrap sample (min_p=0 per WBG paper)
         if (coba) {
             t0 = hrclock::now();
-            burg_aic_select_ws(ws.x_buf, maxp, ic_type, ws, 0);
+            burg_aic_select_ws(ws.x_buf, maxp, ic_type, ws, 0, early_stop);
             t1 = hrclock::now();
             acc_burg_coba += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
         }
