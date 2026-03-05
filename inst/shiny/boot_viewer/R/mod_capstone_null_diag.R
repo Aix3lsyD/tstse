@@ -7,13 +7,21 @@ mod_capstone_null_diag_ui <- function(ns) {
     br(),
     h4("Null Model & MC Diagnostics"),
     p(class = "text-body-secondary",
-      "Diagnostics for fitted null models and Monte Carlo behavior across the selected cell(s)."),
+      "Diagnostics for fitted null models and Monte Carlo behavior in the selected scenario."),
 
     div(class = "plot-controls",
       fluidRow(
         column(4,
           selectInput(ns("ndiag_cell"), "Grid Cell:",
-                      choices = c("All Cells" = "all"))
+                      choices = character(0))
+        ),
+        column(4,
+          selectInput(ns("ndiag_reject_mode"), "Rejection rates shown:",
+                      choices = c("All available" = "all",
+                                  "COB" = "cob",
+                                  "CO" = "co",
+                                  "COBA" = "coba"),
+                      selected = "all")
         ),
         column(4,
           div(style = "margin-top: 25px;",
@@ -29,13 +37,7 @@ mod_capstone_null_diag_ui <- function(ns) {
     ),
 
     fluidRow(
-      column(6,
-        wellPanel(
-          h5("AR Order Distribution"),
-          plotOutput(ns("ndiag_ar_order"), height = "420px")
-        )
-      ),
-      column(6,
+      column(12,
         wellPanel(
           h5("Estimated AR(1) Coefficient Distribution"),
           plotOutput(ns("ndiag_phi_dist"), height = "420px")
@@ -73,16 +75,20 @@ mod_capstone_null_diag_server <- function(input, output, session,
 
   observe({
     ch <- cap_cell_choices()
-    all_choices <- c("All Cells" = "all", ch)
-    updateSelectInput(session, "ndiag_cell", choices = all_choices)
+    current <- isolate(input$ndiag_cell)
+    selected <- if (!is.null(current) && current %in% unname(ch)) current else {
+      if (length(ch) > 0) unname(ch)[1] else character(0)
+    }
+    updateSelectInput(session, "ndiag_cell", choices = ch,
+                      selected = selected)
   })
 
-  # Collect raw results across selected cell(s)
+  # Collect raw results for selected scenario
   ndiag_sims <- reactive({
     req(input$ndiag_cell)
     ch <- cap_cell_choices()
     if (length(ch) == 0) return(NULL)
-    keys <- if (input$ndiag_cell == "all") unname(ch) else input$ndiag_cell
+    keys <- input$ndiag_cell
     all_sims <- list()
     for (key in keys) {
       sims <- cap_sim_data(key)
@@ -97,20 +103,25 @@ mod_capstone_null_diag_server <- function(input, output, session,
   output$ndiag_status <- renderText({
     sims <- ndiag_sims()
     if (is.null(sims)) return("No data")
-    paste0(length(sims), " simulations")
+    paste0(input$ndiag_cell, " (", length(sims), " simulations)")
   })
 
   # Null model diagnostics (base graphics, 3 panels)
   output$ndiag_null_model <- renderPlot(bg = "transparent", {
     sims <- ndiag_sims()
     if (is.null(sims) || length(sims) == 0) {
-      plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg()); return()
+      op <- viewer_base_par(scale = 1.2)
+      on.exit(par(op), add = TRUE)
+      plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg(session = session)); return()
     }
-    fg <- viewer_plot_fg()
+    op <- viewer_base_par(scale = 1.2)
+    on.exit(par(op), add = TRUE)
+    fg <- viewer_plot_fg(session = session)
     # Need maxp - guess from max observed order
     maxp <- max(vapply(sims, function(r) r$p, integer(1)), na.rm = TRUE)
+    reject_mode <- input$ndiag_reject_mode %||% "all"
     plot_null_model_diagnostics(sims, nsims = length(sims), maxp = maxp,
-                                 min_p = 1L, fg = fg)
+                                  min_p = 1L, fg = fg, reject_mode = reject_mode)
   })
 
   # Build diag data frame for ggplot-based plots
@@ -120,7 +131,7 @@ mod_capstone_null_diag_server <- function(input, output, session,
 
     # Parse cell key(s) for config info
     ch <- cap_cell_choices()
-    keys <- if (input$ndiag_cell == "all") unname(ch) else input$ndiag_cell
+    keys <- input$ndiag_cell
 
     rows <- list()
     for (key in keys) {
@@ -147,16 +158,6 @@ mod_capstone_null_diag_server <- function(input, output, session,
     do.call(rbind, rows)
   })
 
-  # AR order distribution (ggplot)
-  output$ndiag_ar_order <- renderPlot(bg = "transparent", {
-    df <- ndiag_df()
-    if (nrow(df) == 0) {
-      plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg()); return()
-    }
-    p <- plot_ar_order_distribution(df)
-    if (!is.null(p)) print(p)
-  })
-
   # AR(1) coefficient distribution
   output$ndiag_phi_dist <- renderPlot(bg = "transparent", {
     df <- ndiag_df()
@@ -165,7 +166,7 @@ mod_capstone_null_diag_server <- function(input, output, session,
     }
     p <- plot_ar_coefficient_distribution(df)
     if (!is.null(p)) print(p) else {
-      plot.new(); text(0.5, 0.5, "No AR coefficient data", cex = 1.2, col = viewer_plot_fg())
+      plot.new(); text(0.5, 0.5, "No AR(1)-selected fits for this scenario", cex = 1.2, col = viewer_plot_fg())
     }
   })
 

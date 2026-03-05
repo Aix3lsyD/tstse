@@ -42,6 +42,41 @@
   )
 )
 
+.repl_action_button <- function(inputId, label, icon_name = NULL,
+                                class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else if (grepl("warning", class, fixed = TRUE)) {
+      "warning"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
 # Seed comparison helper --------------------------------------------------
 
 # Run the grid with a given seed and return aggregated rejection rates.
@@ -178,6 +213,23 @@ mod_capstone_replication_server <- function(input, output, session,
 
   ns <- session$ns
   has_waiter <- requireNamespace("waiter", quietly = TRUE)
+  has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+  repl_validator <- NULL
+
+  if (has_shinyvalidate) {
+    v <- shinyvalidate::InputValidator$new()
+    v$add_rule("comp_seed", function(value) {
+      num <- suppressWarnings(as.numeric(value))
+      int_val <- suppressWarnings(as.integer(value))
+      if (is.na(num) || is.na(int_val) || num != int_val || int_val < 1) {
+        "Must be an integer >= 1"
+      } else {
+        NULL
+      }
+    })
+    v$enable()
+    repl_validator <- v
+  }
 
   .with_repl_waiter <- function(expr) {
     if (!has_waiter) return(force(expr))
@@ -533,8 +585,9 @@ mod_capstone_replication_server <- function(input, output, session,
         ),
         column(3,
           div(style = "margin-top: 25px;",
-            actionButton(ns("run_comp"), "Run Comparison",
-                         icon = icon("shuffle"), class = "btn-sm btn-warning"))
+            .repl_action_button(ns("run_comp"), "Run Comparison",
+                                icon_name = "shuffle",
+                                class = "btn-sm btn-warning"))
         ),
         column(6,
           div(style = "margin-top: 25px;",
@@ -546,6 +599,12 @@ mod_capstone_replication_server <- function(input, output, session,
 
   # Run comparison simulation
   observeEvent(input$run_comp, {
+    if (!is.null(repl_validator) && !isTRUE(repl_validator$is_valid())) {
+      showNotification("Please fix highlighted input errors before running.",
+                       type = "warning", duration = 5)
+      return()
+    }
+
     if (isTRUE(comp_state$active)) {
       showNotification("Comparison is already running.", type = "warning", duration = 3)
       return()

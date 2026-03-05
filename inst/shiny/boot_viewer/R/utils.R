@@ -788,7 +788,9 @@ plot_ar_order_distribution <- function(df, base_size = 14) {
 # Estimated null AR(1) coefficient distribution
 plot_ar_coefficient_distribution <- function(df, base_size = 14) {
   if (nrow(df) == 0 || all(is.na(df$null_phi1))) return(NULL)
-  df <- df[!is.na(df$null_phi1), ]
+  if (!"null_ar_order" %in% names(df)) return(NULL)
+  df <- df[!is.na(df$null_phi1) & df$null_ar_order == 1, ]
+  if (nrow(df) == 0) return(NULL)
   df$true_phi_label <- paste0("True phi = ", df$phi)
 
   p <- ggplot2::ggplot(df, ggplot2::aes(x = null_phi1)) +
@@ -1174,14 +1176,34 @@ plot_innovation_diagnostics <- function(innov, is_time_dependent, dist_label,
 
 # Null model diagnostics: 3-panel base graphics (AR order, variance, rejection by order)
 plot_null_model_diagnostics <- function(results, nsims, maxp, min_p = 1L,
-                                        fg = "#212529") {
+                                        fg = "#212529",
+                                        reject_mode = c("all", "cob", "co", "coba")) {
+  reject_mode <- match.arg(reject_mode)
   ar_orders <- vapply(results, function(r) r$p, integer(1))
   varas <- vapply(results, function(r) r$vara, numeric(1))
   pvals_boot <- vapply(results, function(r) r$pvalue, numeric(1))
   pvals_asymp <- vapply(results, function(r) r$pvalue_asymp, numeric(1))
+  pvals_adj <- vapply(results, function(r) {
+    if (is.null(r$pvalue_adj) || length(r$pvalue_adj) == 0 || is.na(r$pvalue_adj)) {
+      NA_real_
+    } else {
+      as.numeric(r$pvalue_adj)
+    }
+  }, numeric(1))
 
-  graphics::par(mfrow = c(3, 1), mar = c(5, 5, 3.5, 1.5),
-                col.axis = fg, col.lab = fg, col.main = fg, fg = fg)
+  graphics::par(
+    mfrow = c(3, 1),
+    mar = c(5.5, 5.3, 3.8, 1.8),
+    mgp = c(2.6, 0.85, 0),
+    col.axis = fg,
+    col.lab = fg,
+    col.main = fg,
+    fg = fg,
+    cex = 1.02,
+    cex.axis = 1.0,
+    cex.lab = 1.04,
+    cex.main = 1.08
+  )
 
   # Panel 1: AR Order Distribution
   order_tbl <- table(factor(ar_orders, levels = 0:maxp))
@@ -1217,26 +1239,73 @@ plot_null_model_diagnostics <- function(results, nsims, maxp, min_p = 1L,
   if (length(unique_orders) > 0) {
     boot_rates <- numeric(length(unique_orders))
     asymp_rates <- numeric(length(unique_orders))
+    adj_rates <- numeric(length(unique_orders))
     counts <- integer(length(unique_orders))
     for (j in seq_along(unique_orders)) {
       idx <- ar_orders == unique_orders[j]
       counts[j] <- sum(idx)
       boot_rates[j] <- mean(pvals_boot[idx] < 0.05, na.rm = TRUE)
       asymp_rates[j] <- mean(pvals_asymp[idx] < 0.05, na.rm = TRUE)
+      adj_rates[j] <- mean(pvals_adj[idx] < 0.05, na.rm = TRUE)
     }
-    rate_mat <- rbind(boot_rates, asymp_rates)
+
+    if (identical(reject_mode, "cob")) {
+      rate_mat <- rbind(boot_rates)
+      row_labs <- c("COB")
+      fill_cols <- c("#377eb8")
+    } else if (identical(reject_mode, "co")) {
+      rate_mat <- rbind(asymp_rates)
+      row_labs <- c("CO")
+      fill_cols <- c("#e41a1c")
+    } else if (identical(reject_mode, "coba")) {
+      rate_mat <- rbind(adj_rates)
+      row_labs <- c("COBA")
+      fill_cols <- c("#4daf4a")
+    } else {
+      if (all(is.na(adj_rates))) {
+        rate_mat <- rbind(boot_rates, asymp_rates)
+        row_labs <- c("COB", "CO")
+        fill_cols <- c("#377eb8", "#e41a1c")
+      } else {
+        rate_mat <- rbind(boot_rates, asymp_rates, adj_rates)
+        row_labs <- c("COB", "CO", "COBA")
+        fill_cols <- c("#377eb8", "#e41a1c", "#4daf4a")
+      }
+    }
+
+    rownames(rate_mat) <- row_labs
     colnames(rate_mat) <- paste0("AR(", unique_orders, ")\nn=", counts)
+
+    if (all(is.na(rate_mat))) {
+      graphics::plot.new()
+      graphics::text(0.5, 0.5,
+                     "No rejection-rate values available for selected method(s).",
+                     cex = 1.05, col = fg)
+      return(invisible(NULL))
+    }
+
+    max_rate <- suppressWarnings(max(rate_mat, na.rm = TRUE))
+    if (!is.finite(max_rate)) max_rate <- 0.15
     graphics::barplot(rate_mat, beside = TRUE,
-                      col = c("#377eb8", "#e41a1c"), border = NA,
+                      col = fill_cols, border = NA,
+                      width = 0.55,
                       main = "Rejection Rate by Fitted AR Order",
                       xlab = "AR Order (with sim count)", ylab = "Rejection Rate",
-                      ylim = c(0, max(0.15, max(rate_mat) * 1.2)))
+                      ylim = c(0, max(0.15, max_rate * 1.2)))
     graphics::abline(h = 0.05, lty = 2, col = "grey50", lwd = 1.5)
+
+    legend_cols <- c(fill_cols, "grey50")
+    legend_pch <- c(rep(15, length(fill_cols)), NA)
+    legend_lwd <- c(rep(NA, length(fill_cols)), 1.5)
+    legend_lty <- c(rep(NA, length(fill_cols)), 2)
+    legend_labs <- c(row_labs, "Nominal 0.05")
     graphics::legend("topright",
-                     legend = c("Bootstrap", "Asymptotic", "Nominal 0.05"),
-                     col = c("#377eb8", "#e41a1c", "grey50"),
-                     lwd = c(NA, NA, 1.5), lty = c(NA, NA, 2),
-                     pch = c(15, 15, NA), pt.cex = 2,
+                     legend = legend_labs,
+                     col = legend_cols,
+                     lwd = legend_lwd,
+                     lty = legend_lty,
+                     pch = legend_pch,
+                     pt.cex = 2,
                      bty = "n", cex = 1.1, text.col = fg)
   }
 }

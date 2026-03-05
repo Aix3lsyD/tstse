@@ -2,6 +2,69 @@
 # Times each component of the simulation pipeline to identify bottlenecks
 # Includes parent-child breakdown of the bootstrap kernel sub-components
 
+.aprofile_picker_input <- function(inputId, label, choices, selected = NULL, options = list()) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::pickerInput(
+      inputId = inputId,
+      label = label,
+      choices = choices,
+      selected = selected,
+      options = options
+    )
+  } else {
+    selectInput(inputId = inputId, label = label, choices = choices, selected = selected)
+  }
+}
+
+.aprofile_toggle_input <- function(inputId, label, value = FALSE) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::materialSwitch(
+      inputId = inputId,
+      label = label,
+      value = value,
+      status = "primary",
+      right = FALSE
+    )
+  } else {
+    checkboxInput(inputId = inputId, label = label, value = value)
+  }
+}
+
+.aprofile_action_button <- function(inputId, label, icon_name = NULL,
+                                    class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else if (grepl("info", class, fixed = TRUE)) {
+      "primary"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
 mod_adhoc_profile_ui <- function(ns) {
   tabPanel("Performance Profile",
     br(),
@@ -12,40 +75,37 @@ mod_adhoc_profile_ui <- function(ns) {
       "and bootstrap kernel sub-operations."),
     div(class = "plot-controls",
       fluidRow(
-        column(3,
-          checkboxInput(ns("prof_use_current"), "Use Current Ad-Hoc Settings",
-                        value = TRUE)
+        column(4,
+          .aprofile_toggle_input(ns("prof_use_current"), "Use Current Ad-Hoc Settings",
+                                 value = TRUE)
+        ),
+        column(4,
+          .aprofile_toggle_input(ns("prof_early_stop"), "Early Stopping",
+                                 value = FALSE)
         ),
         column(2,
-          conditionalPanel(
-            condition = sprintf("!input['%s']", ns("prof_use_current")),
-            numericInput(ns("prof_n"), "n", value = 200, min = 20, max = 2000)
-          )
-        ),
-        column(2,
-          conditionalPanel(
-            condition = sprintf("!input['%s']", ns("prof_use_current")),
-            numericInput(ns("prof_nb"), "nb", value = 399, min = 49, max = 4999)
-          )
-        ),
-        column(2,
-          conditionalPanel(
-            condition = sprintf("!input['%s']", ns("prof_use_current")),
-            numericInput(ns("prof_maxp"), "maxp", value = 5, min = 1, max = 20)
-          )
-        ),
-        column(2,
-          checkboxInput(ns("prof_early_stop"), "Early Stopping",
-                        value = FALSE)
-        ),
-        column(2,
-          checkboxInput(ns("prof_use_fast"), "Use fast generators",
-                        value = FALSE)
+          .aprofile_toggle_input(ns("prof_use_fast"), "Use fast generators",
+                                 value = FALSE)
         ),
         column(2,
           div(style = "margin-top: 25px;",
-            actionButton(ns("prof_run"), "Run Profile",
-                         icon = icon("stopwatch"), class = "btn-sm btn-info"))
+            .aprofile_action_button(ns("prof_run"), "Run Profile",
+                                    icon_name = "stopwatch", class = "btn-sm btn-info"))
+        )
+      ),
+      conditionalPanel(
+        condition = sprintf("!input['%s']", ns("prof_use_current")),
+        ns = ns,
+        fluidRow(
+          column(4,
+            numericInput(ns("prof_n"), "n", value = 200, min = 20, max = 2000)
+          ),
+          column(4,
+            numericInput(ns("prof_nb"), "nb", value = 399, min = 49, max = 4999)
+          ),
+          column(4,
+            numericInput(ns("prof_maxp"), "maxp", value = 5, min = 1, max = 20)
+          )
         )
       )
     ),
@@ -64,15 +124,15 @@ mod_adhoc_profile_ui <- function(ns) {
         "The n x nb grid can be slow for large ranges."),
       fluidRow(
         column(3,
-          selectInput(ns("prof_scale_mode"), "Scaling Dimension:",
-                      choices = c("nb (bootstrap replicates)" = "nb",
-                                  "n (sample size)" = "n",
-                                  "n x nb (grid)" = "nxnb"))
+          .aprofile_picker_input(ns("prof_scale_mode"), "Scaling Dimension:",
+                                 choices = c("nb (bootstrap replicates)" = "nb",
+                                             "n (sample size)" = "n",
+                                             "n x nb (grid)" = "nxnb"))
         ),
         column(3,
           div(style = "margin-top: 25px;",
-            actionButton(ns("prof_run_scaling"), "Run Scaling",
-                         icon = icon("chart-line"), class = "btn-sm btn-outline-info"))
+            .aprofile_action_button(ns("prof_run_scaling"), "Run Scaling",
+                                    icon_name = "chart-line", class = "btn-sm btn-outline-info"))
         ),
         column(6,
           conditionalPanel(
@@ -90,6 +150,46 @@ mod_adhoc_profile_ui <- function(ns) {
 mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
 
   ns <- session$ns
+  has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+  profile_validator <- NULL
+
+  if (has_shinyvalidate) {
+    v <- shinyvalidate::InputValidator$new()
+    .rule_number <- function(expr, msg) {
+      force(expr)
+      function(value) {
+        num <- suppressWarnings(as.numeric(value))
+        if (is.na(num) || !isTRUE(expr(num))) msg else NULL
+      }
+    }
+    .rule_when <- function(cond_fn, rule_fn) {
+      force(cond_fn)
+      force(rule_fn)
+      function(value) {
+        if (!isTRUE(cond_fn())) return(NULL)
+        rule_fn(value)
+      }
+    }
+
+    v$add_rule("prof_n", .rule_when(
+      function() !isTRUE(input$prof_use_current),
+      .rule_number(function(x) as.integer(x) >= 20 && as.integer(x) <= 2000,
+                   "Must be an integer from 20 to 2000")
+    ))
+    v$add_rule("prof_nb", .rule_when(
+      function() !isTRUE(input$prof_use_current),
+      .rule_number(function(x) as.integer(x) >= 49,
+                   "Must be an integer >= 49")
+    ))
+    v$add_rule("prof_maxp", .rule_when(
+      function() !isTRUE(input$prof_use_current),
+      .rule_number(function(x) as.integer(x) >= 1 && as.integer(x) <= 20,
+                   "Must be an integer from 1 to 20")
+    ))
+
+    v$enable()
+    profile_validator <- v
+  }
 
   profile_results_rv <- reactiveVal(NULL)
   scaling_results_rv <- reactiveVal(NULL)
@@ -261,6 +361,12 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
 
   # Run profile
   observeEvent(input$prof_run, {
+    if (!is.null(profile_validator) && !isTRUE(profile_validator$is_valid())) {
+      showNotification("Please fix highlighted input errors before running.",
+                       type = "warning", duration = 5)
+      return()
+    }
+
     params <- .get_profile_params()
     if (is.null(params$phi) || is.null(params$innov_gen)) {
       showNotification("Set valid ad-hoc parameters first.", type = "warning")
@@ -283,6 +389,12 @@ mod_adhoc_profile_server <- function(input, output, session, adhoc_params) {
 
   # Run scaling analysis
   observeEvent(input$prof_run_scaling, {
+    if (!is.null(profile_validator) && !isTRUE(profile_validator$is_valid())) {
+      showNotification("Please fix highlighted input errors before running.",
+                       type = "warning", duration = 5)
+      return()
+    }
+
     params <- .get_profile_params()
     if (is.null(params$phi) || is.null(params$innov_gen)) {
       showNotification("Set valid ad-hoc parameters first.", type = "warning")

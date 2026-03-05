@@ -1,6 +1,39 @@
 # Module: Benchmark tab
 # Runtime benchmark across tswge and tstse WBG implementations.
 
+.bench_action_button <- function(inputId, label, icon_name = NULL,
+                                 class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
 mod_benchmark_ui <- function(id) {
   ns <- NS(id)
 
@@ -32,19 +65,21 @@ mod_benchmark_ui <- function(id) {
               "tswge::wbg.boot.wge()" = "tswge",
               "tstse::wbg_boot()" = "wbg_boot",
               "tstse::wbg_boot(cores = 0)" = "wbg_boot_cores0",
-              "tstse::wbg_boot_fast()" = "wbg_boot_fast"
+              "tstse::wbg_boot_fast()" = "wbg_boot_fast",
+              "tstse::wbg_boot_fast() + fast DGP gen" = "wbg_boot_fast_fastgen"
             ),
             selected = c("tswge", "wbg_boot", "wbg_boot_cores0", "wbg_boot_fast")
           ),
           p(class = "text-body-secondary", style = "margin-top: -4px; margin-bottom: 8px;",
             "Select at least two methods."),
           p(class = "text-body-secondary", style = "margin-top: 10px; margin-bottom: 8px;",
-            "Innovation distribution: Normal(0, 1); maxp = 5; criterion = AIC"),
-          actionButton(
+            "Innovation distribution: Normal(0, 1); maxp = 5; criterion = AIC (fast-gen method uses dqrng DGP)."),
+          .bench_action_button(
             ns("bench_run"),
             "Run Benchmark",
-            icon = icon("play"),
-            class = "btn-primary btn-block"
+            icon_name = "play",
+            class = "btn-primary",
+            full_width = TRUE
           ),
           hr(),
           textOutput(ns("bench_status"))
@@ -62,6 +97,32 @@ mod_benchmark_ui <- function(id) {
 mod_benchmark_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     scenario_maxp <- 5L
+    has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+    bench_validator <- NULL
+
+    if (has_shinyvalidate) {
+      v <- shinyvalidate::InputValidator$new()
+      .rule_number <- function(expr, msg) {
+        force(expr)
+        function(value) {
+          num <- suppressWarnings(as.numeric(value))
+          if (is.na(num) || !isTRUE(expr(num))) msg else NULL
+        }
+      }
+
+      v$add_rule("bench_n", .rule_number(function(x) as.integer(x) >= 20,
+                                           "Must be an integer >= 20"))
+      v$add_rule("bench_nb", .rule_number(function(x) as.integer(x) >= 19,
+                                            "Must be an integer >= 19"))
+      v$add_rule("bench_phi", .rule_number(function(x) x >= -0.99 && x <= 0.99,
+                                             "Must be between -0.99 and 0.99"))
+      v$add_rule("bench_nsims", .rule_number(function(x) as.integer(x) >= 1 && as.integer(x) <= 500,
+                                               "Must be an integer from 1 to 500"))
+      v$add_rule("bench_seed", .rule_number(function(x) as.integer(x) >= 1,
+                                              "Must be an integer >= 1"))
+      v$enable()
+      bench_validator <- v
+    }
 
     .safe_int <- function(x, default, min_val = NULL, max_val = NULL) {
       val <- suppressWarnings(as.integer(x))
@@ -79,12 +140,13 @@ mod_benchmark_server <- function(id) {
       val
     }
 
-    .generate_series <- function(n, phi, series_seed) {
+    .generate_series <- function(n, phi, series_seed, use_fast_gen = FALSE) {
+      innov_factory <- if (isTRUE(use_fast_gen)) make_gen_norm_fast else make_gen_norm
       tryCatch(
         gen_aruma_flex(
           n = n,
           phi = phi,
-          innov_gen = make_gen_norm(sd = 1),
+          innov_gen = innov_factory(sd = 1),
           seed = series_seed,
           plot = FALSE
         )$y,
@@ -96,6 +158,18 @@ mod_benchmark_server <- function(id) {
     }
 
     bench_results <- eventReactive(input$bench_run, {
+      if (!is.null(bench_validator) && !isTRUE(bench_validator$is_valid())) {
+        showNotification("Please fix highlighted input errors before running.",
+                         type = "warning", duration = 5)
+        return(
+          list(
+            meta = list(),
+            results = data.frame(),
+            error = "Invalid benchmark input values."
+          )
+        )
+      }
+
       n <- .safe_int(input$bench_n, default = 500L, min_val = 20L)
       nb <- .safe_int(input$bench_nb, default = 199L, min_val = 19L)
       phi <- .safe_num(input$bench_phi, default = 0.9, min_val = -0.99, max_val = 0.99)
@@ -151,6 +225,20 @@ mod_benchmark_server <- function(id) {
         ),
         wbg_boot_fast = list(
           label = "tstse::wbg_boot_fast()",
+          use_fast_gen = FALSE,
+          run = function(x, run_seed) {
+            wbg_boot_fast(
+              x,
+              nb = nb,
+              maxp = scenario_maxp,
+              criterion = "aic",
+              seed = run_seed
+            )
+          }
+        ),
+        wbg_boot_fast_fastgen = list(
+          label = "tstse::wbg_boot_fast() + fast DGP gen",
+          use_fast_gen = TRUE,
           run = function(x, run_seed) {
             wbg_boot_fast(
               x,
@@ -162,6 +250,12 @@ mod_benchmark_server <- function(id) {
           }
         )
       )
+
+      for (mid in names(all_methods)) {
+        if (is.null(all_methods[[mid]]$use_fast_gen)) {
+          all_methods[[mid]]$use_fast_gen <- FALSE
+        }
+      }
 
       selected_ids <- input$bench_methods
       if (is.null(selected_ids)) selected_ids <- character(0)
@@ -199,7 +293,12 @@ mod_benchmark_server <- function(id) {
               detail = sprintf("%s [%d/%d]", m$label, j, nsims)
             )
 
-            x <- .generate_series(n = n, phi = phi, series_seed = series_seeds[j])
+            x <- .generate_series(
+              n = n,
+              phi = phi,
+              series_seed = series_seeds[j],
+              use_fast_gen = isTRUE(m$use_fast_gen)
+            )
             run_seed <- boot_seeds[j]
 
             gc(FALSE)

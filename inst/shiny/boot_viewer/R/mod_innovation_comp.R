@@ -18,6 +18,67 @@
 .SLOT_DEFAULTS <- c("Student's t", "GARCH", "Heteroscedastic",
                      "Laplace", "Mixture Normal", "Uniform")
 
+.innov_picker_input <- function(inputId, label, choices, selected = NULL, options = list()) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::pickerInput(
+      inputId = inputId,
+      label = label,
+      choices = choices,
+      selected = selected,
+      options = options
+    )
+  } else {
+    selectInput(inputId = inputId, label = label, choices = choices, selected = selected)
+  }
+}
+
+.innov_toggle_input <- function(inputId, label, value = FALSE) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::materialSwitch(
+      inputId = inputId,
+      label = label,
+      value = value,
+      status = "primary",
+      right = FALSE
+    )
+  } else {
+    checkboxInput(inputId = inputId, label = label, value = value)
+  }
+}
+
+.innov_action_button <- function(inputId, label, icon_name = NULL,
+                                 class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
 # --- UI helper: per-slot parameter panels ------------------------------------
 
 .innov_slot_param_ui <- function(ns, i) {
@@ -95,10 +156,10 @@
     # Heteroscedastic
     conditionalPanel(
       condition = sprintf("input.%s == 'Heteroscedastic'", type_id), ns = ns,
-      selectInput(ns(paste0("slot_hetero_shape_", sid)), "Weight Shape:",
-                  choices = c("linear", "sqrt", "log", "power", "exp",
-                              "step", "periodic"),
-                  selected = "linear"),
+      .innov_picker_input(ns(paste0("slot_hetero_shape_", sid)), "Weight Shape:",
+                          choices = c("linear", "sqrt", "log", "power", "exp",
+                                      "step", "periodic"),
+                          selected = "linear"),
       # from/to for linear, sqrt, log, power, exp
       conditionalPanel(
         condition = sprintf(
@@ -172,12 +233,13 @@ mod_innovation_comp_ui <- function(id) {
           numericInput(ns("innov_n"), "Sample Size (n):",
                        value = 200, min = 10, max = 2000, step = 10),
           numericInput(ns("innov_seed"), "Seed:", value = 42, min = 1, step = 1),
-          checkboxInput(ns("innov_compact_ref"),
-                        "Compact reference plot", value = FALSE),
-          checkboxInput(ns("innov_global_innov_view"),
-                        "Show all innovation views", value = FALSE),
-          actionButton(ns("innov_generate"), "Generate",
-                       icon = icon("play"), class = "btn-primary btn-block")
+          .innov_toggle_input(ns("innov_compact_ref"),
+                              "Compact reference plot", value = FALSE),
+          .innov_toggle_input(ns("innov_global_innov_view"),
+                              "Show all innovation views", value = FALSE),
+          .innov_action_button(ns("innov_generate"), "Generate",
+                               icon_name = "play", class = "btn-primary",
+                               full_width = TRUE)
         ),
 
         # Slot configuration accordion
@@ -188,38 +250,38 @@ mod_innovation_comp_ui <- function(id) {
 
           bslib::accordion_panel(
             "Slot 1",
-            selectInput(ns("slot_type_1"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[1]),
+            .innov_picker_input(ns("slot_type_1"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[1]),
             .innov_slot_param_ui(ns, 1)
           ),
           bslib::accordion_panel(
             "Slot 2",
-            selectInput(ns("slot_type_2"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[2]),
+            .innov_picker_input(ns("slot_type_2"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[2]),
             .innov_slot_param_ui(ns, 2)
           ),
           bslib::accordion_panel(
             "Slot 3",
-            selectInput(ns("slot_type_3"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[3]),
+            .innov_picker_input(ns("slot_type_3"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[3]),
             .innov_slot_param_ui(ns, 3)
           ),
           bslib::accordion_panel(
             "Slot 4",
-            selectInput(ns("slot_type_4"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[4]),
+            .innov_picker_input(ns("slot_type_4"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[4]),
             .innov_slot_param_ui(ns, 4)
           ),
           bslib::accordion_panel(
             "Slot 5",
-            selectInput(ns("slot_type_5"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[5]),
+            .innov_picker_input(ns("slot_type_5"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[5]),
             .innov_slot_param_ui(ns, 5)
           ),
           bslib::accordion_panel(
             "Slot 6",
-            selectInput(ns("slot_type_6"), "Distribution:",
-                        .INNOV_CHOICES, selected = .SLOT_DEFAULTS[6]),
+            .innov_picker_input(ns("slot_type_6"), "Distribution:",
+                                .INNOV_CHOICES, selected = .SLOT_DEFAULTS[6]),
             .innov_slot_param_ui(ns, 6)
           )
         )
@@ -451,6 +513,192 @@ mod_innovation_comp_server <- function(id) {
     # Reference plot: 0 = AR series, 1 = histogram (no overlay needed)
     ref_view_state <- reactiveVal(0L)
 
+    .parse_num_list <- function(x) {
+      if (is.null(x)) return(numeric(0))
+      txt <- trimws(as.character(x))
+      if (!nzchar(txt)) return(numeric(0))
+      vals <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
+      if (length(vals) == 0 || any(is.na(vals))) return(NULL)
+      vals
+    }
+
+    has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+    innov_validator <- NULL
+
+    if (has_shinyvalidate) {
+      v <- shinyvalidate::InputValidator$new()
+
+      .rule_number <- function(expr, msg) {
+        force(expr)
+        function(value) {
+          if (is.null(value) || is.na(value) || !isTRUE(expr(as.numeric(value)))) msg else NULL
+        }
+      }
+
+      .rule_when <- function(cond_fn, rule_fn) {
+        force(cond_fn)
+        force(rule_fn)
+        function(value) {
+          if (!isTRUE(cond_fn())) return(NULL)
+          rule_fn(value)
+        }
+      }
+
+      .rule_csv_nonneg <- function(required = TRUE) {
+        force(required)
+        function(value) {
+          vals <- .parse_num_list(value)
+          if (is.null(vals)) return("Must be a comma-separated numeric list")
+          if (length(vals) == 0) {
+            if (isTRUE(required)) return("Provide at least one value")
+            return(NULL)
+          }
+          if (any(vals < 0)) return("Values must be >= 0")
+          NULL
+        }
+      }
+
+      v$add_rule("innov_phi", .rule_number(function(x) x >= 0.01 && x <= 0.999,
+                                             "Must be between 0.01 and 0.999"))
+      v$add_rule("innov_n", .rule_number(function(x) as.integer(x) >= 10 && as.integer(x) <= 2000,
+                                           "Must be an integer from 10 to 2000"))
+      v$add_rule("innov_seed", .rule_number(function(x) as.integer(x) >= 1,
+                                              "Must be an integer >= 1"))
+
+      for (i in 1:6) {
+        local({
+          idx <- i
+          slot_type_id <- paste0("slot_type_", idx)
+          .is_slot <- function(label) identical(input[[slot_type_id]], label)
+          .is_hetero_shape <- function(shape) {
+            identical(input[[slot_type_id]], "Heteroscedastic") &&
+              identical(input[[paste0("slot_hetero_shape_", idx)]], shape)
+          }
+
+          v$add_rule(paste0("slot_norm_sd_", idx), .rule_when(
+            function() .is_slot("Normal"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_t_df_", idx), .rule_when(
+            function() .is_slot("Student's t"),
+            .rule_number(function(x) x >= 1, "Must be >= 1")
+          ))
+          v$add_rule(paste0("slot_skt_df_", idx), .rule_when(
+            function() .is_slot("Skew-t"),
+            .rule_number(function(x) x >= 3, "Must be >= 3")
+          ))
+          v$add_rule(paste0("slot_skt_alpha_", idx), .rule_when(
+            function() .is_slot("Skew-t"),
+            .rule_number(function(x) is.finite(x), "Must be numeric")
+          ))
+          v$add_rule(paste0("slot_ged_nu_", idx), .rule_when(
+            function() .is_slot("GED"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_ged_sd_", idx), .rule_when(
+            function() .is_slot("GED"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_lap_scale_", idx), .rule_when(
+            function() .is_slot("Laplace"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_unif_hw_", idx), .rule_when(
+            function() .is_slot("Uniform"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_mix_sd1_", idx), .rule_when(
+            function() .is_slot("Mixture Normal"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_mix_sd2_", idx), .rule_when(
+            function() .is_slot("Mixture Normal"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_mix_prob1_", idx), .rule_when(
+            function() .is_slot("Mixture Normal"),
+            .rule_number(function(x) x > 0 && x < 1, "Must be between 0 and 1")
+          ))
+
+          v$add_rule(paste0("slot_garch_omega_", idx), .rule_when(
+            function() .is_slot("GARCH"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_garch_alpha_", idx), .rule_when(
+            function() .is_slot("GARCH"),
+            .rule_csv_nonneg(required = TRUE)
+          ))
+          v$add_rule(paste0("slot_garch_beta_", idx), .rule_when(
+            function() .is_slot("GARCH"),
+            .rule_csv_nonneg(required = FALSE)
+          ))
+
+          v$add_rule(paste0("slot_hetero_sd_", idx), .rule_when(
+            function() identical(input[[slot_type_id]], "Heteroscedastic"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_hetero_from_", idx), .rule_when(
+            function() {
+              identical(input[[slot_type_id]], "Heteroscedastic") &&
+                input[[paste0("slot_hetero_shape_", idx)]] %in% c("linear", "sqrt", "log", "power", "exp")
+            },
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_hetero_to_", idx), .rule_when(
+            function() {
+              identical(input[[slot_type_id]], "Heteroscedastic") &&
+                input[[paste0("slot_hetero_shape_", idx)]] %in% c("linear", "sqrt", "log", "power", "exp")
+            },
+            function(value) {
+              to_val <- suppressWarnings(as.numeric(value))
+              from_val <- suppressWarnings(as.numeric(input[[paste0("slot_hetero_from_", idx)]]))
+              if (is.na(to_val) || to_val <= 0) return("Must be > 0")
+              if (!is.na(from_val) && to_val < from_val) return("Must be >= From")
+              NULL
+            }
+          ))
+          v$add_rule(paste0("slot_hetero_power_", idx), .rule_when(
+            function() .is_hetero_shape("power"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_hetero_breaks_", idx), .rule_when(
+            function() .is_hetero_shape("step"),
+            function(value) {
+              brk <- .parse_num_list(value)
+              if (is.null(brk) || length(brk) == 0) return("Provide comma-separated numeric breaks")
+              if (any(brk <= 0 | brk >= 1)) return("Breaks must be between 0 and 1")
+              if (is.unsorted(brk, strictly = TRUE)) return("Breaks must be strictly increasing")
+              NULL
+            }
+          ))
+          v$add_rule(paste0("slot_hetero_levels_", idx), .rule_when(
+            function() .is_hetero_shape("step"),
+            function(value) {
+              lvl <- .parse_num_list(value)
+              if (is.null(lvl) || length(lvl) == 0) return("Provide comma-separated numeric levels")
+              if (any(lvl <= 0)) return("Levels must be > 0")
+              brk <- .parse_num_list(input[[paste0("slot_hetero_breaks_", idx)]])
+              if (!is.null(brk) && length(brk) > 0 && length(lvl) != length(brk) + 1) {
+                return("Levels count must equal breaks count + 1")
+              }
+              NULL
+            }
+          ))
+          v$add_rule(paste0("slot_hetero_base_w_", idx), .rule_when(
+            function() .is_hetero_shape("periodic"),
+            .rule_number(function(x) x > 0, "Must be > 0")
+          ))
+          v$add_rule(paste0("slot_hetero_period_", idx), .rule_when(
+            function() .is_hetero_shape("periodic"),
+            .rule_number(function(x) as.integer(x) >= 1, "Must be an integer >= 1")
+          ))
+        })
+      }
+
+      v$enable()
+      innov_validator <- v
+    }
+
     # Click handler for reference plot (toggle between 0 and 1)
     observeEvent(input$innov_click_ref, {
       ref_view_state((ref_view_state() + 1L) %% 2L)
@@ -478,6 +726,12 @@ mod_innovation_comp_server <- function(id) {
 
     # Main reactive: generate all realizations on button click
     innov_realizations <- eventReactive(input$innov_generate, {
+      if (!is.null(innov_validator) && !isTRUE(innov_validator$is_valid())) {
+        showNotification("Please fix highlighted input errors before generating.",
+                         type = "warning", duration = 5)
+        return(NULL)
+      }
+
       phi <- input$innov_phi
       n <- as.integer(input$innov_n)
       if (is.na(n) || n < 10) n <- 10L

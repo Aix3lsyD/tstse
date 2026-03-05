@@ -237,6 +237,10 @@ mod_capstone_ui <- function(id) {
 
           # Distribution-specific params (minimal set for custom rows)
           conditionalPanel(
+            condition = "input.new_innov == 'Normal'", ns = ns,
+            numericInput(ns("new_norm_sd"), "sd", value = 1, min = 0.001, step = 0.1)
+          ),
+          conditionalPanel(
             condition = "input.new_innov == \"Student's t\"", ns = ns,
             numericInput(ns("new_t_df"), "df", value = 3, min = 1, step = 1)
           ),
@@ -248,7 +252,9 @@ mod_capstone_ui <- function(id) {
             condition = "input.new_innov == 'GARCH'", ns = ns,
             numericInput(ns("new_garch_omega"), "Omega", value = 0.1, min = 0.001, step = 0.01),
             textInput(ns("new_garch_alpha"), "Alpha (comma-separated)",
-                      value = "0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025")
+                      value = "0.2, 0.175, 0.15, 0.125, 0.1, 0.075, 0.05, 0.025"),
+            textInput(ns("new_garch_beta"), "Beta (comma-separated, optional)",
+                      value = "")
           ),
           conditionalPanel(
             condition = "input.new_innov == 'Heteroscedastic'", ns = ns,
@@ -408,6 +414,11 @@ mod_capstone_server <- function(id) {
       if (innov_label == "Student's t" && (is.na(params$t_df) || params$t_df <= 0)) {
         errs <- c(errs, "Student's t df must be positive.")
       }
+      if (innov_label == "Normal" &&
+          (!is.null(params$norm_sd)) &&
+          (is.na(params$norm_sd) || params$norm_sd <= 0)) {
+        errs <- c(errs, "Normal sd must be positive.")
+      }
       if (innov_label == "Laplace" && (is.na(params$lap_scale) || params$lap_scale <= 0)) {
         errs <- c(errs, "Laplace scale must be positive.")
       }
@@ -418,6 +429,12 @@ mod_capstone_server <- function(id) {
         alpha <- .parse_num_list(params$garch_alpha)
         if (length(alpha) == 0 || any(alpha < 0)) {
           errs <- c(errs, "GARCH alpha must be a comma-separated list of non-negative numbers.")
+        }
+        if (!is.null(params$garch_beta) && nzchar(trimws(as.character(params$garch_beta)))) {
+          beta <- .parse_num_list(params$garch_beta)
+          if (length(beta) == 0 || any(beta < 0)) {
+            errs <- c(errs, "GARCH beta must be a comma-separated list of non-negative numbers.")
+          }
         }
       }
       if (innov_label == "Heteroscedastic") {
@@ -528,6 +545,11 @@ mod_capstone_server <- function(id) {
       })
 
       # Distribution-specific add-row rules
+      v$add_rule("new_norm_sd", function(value) {
+        if (!identical(input$new_innov, "Normal")) return(NULL)
+        vv <- suppressWarnings(as.numeric(value))
+        if (is.na(vv) || vv <= 0) "sd must be positive" else NULL
+      })
       v$add_rule("new_t_df", function(value) {
         if (!identical(input$new_innov, "Student's t")) return(NULL)
         vv <- suppressWarnings(as.numeric(value))
@@ -548,6 +570,15 @@ mod_capstone_server <- function(id) {
         vals <- .parse_num_list(value)
         if (length(vals) == 0) return("Enter at least one alpha value")
         if (any(vals < 0)) return("Alpha values must be non-negative")
+        NULL
+      })
+      v$add_rule("new_garch_beta", function(value) {
+        if (!identical(input$new_innov, "GARCH")) return(NULL)
+        txt <- trimws(as.character(value %||% ""))
+        if (!nzchar(txt)) return(NULL)
+        vals <- .parse_num_list(txt)
+        if (length(vals) == 0) return("Enter comma-separated beta values")
+        if (any(vals < 0)) return("Beta values must be non-negative")
         NULL
       })
       v$add_rule("new_hetero_from", function(value) {
@@ -654,7 +685,7 @@ mod_capstone_server <- function(id) {
 
       # Build params from the add-row form
       params <- switch(innov_label,
-        "Normal"      = list(),
+        "Normal"      = list(norm_sd = input$new_norm_sd %||% 1),
         "Student's t" = list(t_df = input$new_t_df %||% 3, t_scale = FALSE),
         "Skew-t"      = list(skt_df = input$new_skt_df %||% 5,
                              skt_alpha = input$new_skt_alpha %||% 0),
@@ -666,10 +697,11 @@ mod_capstone_server <- function(id) {
                                 mix_prob1 = input$new_mix_prob1 %||% 0.9),
         "GARCH"       = list(garch_omega = input$new_garch_omega %||% 0.1,
                              garch_alpha = input$new_garch_alpha %||%
-                               "0.2,0.175,0.15,0.125,0.1,0.075,0.05,0.025"),
+                               "0.2,0.175,0.15,0.125,0.1,0.075,0.05,0.025",
+                             garch_beta = input$new_garch_beta %||% ""),
         "Heteroscedastic" = list(hetero_shape = input$new_hetero_shape %||% "linear",
-                                  hetero_from = input$new_hetero_from %||% 1,
-                                  hetero_to = input$new_hetero_to %||% 10),
+                                   hetero_from = input$new_hetero_from %||% 1,
+                                   hetero_to = input$new_hetero_to %||% 10),
         list()
       )
 

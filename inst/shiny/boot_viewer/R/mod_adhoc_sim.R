@@ -4,6 +4,67 @@
 
 #' @description UI function for the Ad-Hoc Simulation module.
 #' @param id Character string module namespace ID.
+.adhoc_picker_input <- function(inputId, label, choices, selected = NULL, options = list()) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::pickerInput(
+      inputId = inputId,
+      label = label,
+      choices = choices,
+      selected = selected,
+      options = options
+    )
+  } else {
+    selectInput(inputId = inputId, label = label, choices = choices, selected = selected)
+  }
+}
+
+.adhoc_toggle_input <- function(inputId, label, value = FALSE) {
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    shinyWidgets::materialSwitch(
+      inputId = inputId,
+      label = label,
+      value = value,
+      status = "primary",
+      right = FALSE
+    )
+  } else {
+    checkboxInput(inputId = inputId, label = label, value = value)
+  }
+}
+
+.adhoc_action_button <- function(inputId, label, icon_name = NULL,
+                                 class = "btn-primary", full_width = FALSE) {
+  btn_icon <- if (is.null(icon_name)) NULL else icon(icon_name)
+  if (requireNamespace("shinyWidgets", quietly = TRUE)) {
+    btn_color <- if (grepl("danger", class, fixed = TRUE)) {
+      "danger"
+    } else if (grepl("success", class, fixed = TRUE)) {
+      "success"
+    } else if (grepl("secondary", class, fixed = TRUE)) {
+      "default"
+    } else {
+      "primary"
+    }
+    shinyWidgets::actionBttn(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      style = "material-flat",
+      color = btn_color,
+      size = "sm",
+      block = isTRUE(full_width)
+    )
+  } else {
+    actionButton(
+      inputId = inputId,
+      label = label,
+      icon = btn_icon,
+      class = class,
+      style = if (isTRUE(full_width)) "width: 100%;" else NULL
+    )
+  }
+}
+
 mod_adhoc_sim_ui <- function(id) {
   ns <- NS(id)
 
@@ -15,8 +76,9 @@ mod_adhoc_sim_ui <- function(id) {
       column(3,
         wellPanel(
           h4("Run"),
-          actionButton(ns("sim_run"), "Run Simulation",
-                       icon = icon("play"), class = "btn-primary btn-block")
+          .adhoc_action_button(ns("sim_run"), "Run Simulation",
+                               icon_name = "play", class = "btn-primary",
+                               full_width = TRUE)
         ),
 
         wellPanel(
@@ -25,11 +87,11 @@ mod_adhoc_sim_ui <- function(id) {
                        min = 0, max = 0.999, step = 0.01),
           numericInput(ns("sim_n"), "Sample Size (n)", value = 200,
                        min = 10, max = 2000, step = 10),
-          selectInput(ns("sim_innov_dist"), "Innovation Distribution",
-                      choices = c("Normal", "Student's t", "Skew-t", "GED",
-                                  "Laplace", "Uniform", "Mixture Normal",
-                                  "GARCH", "Heteroscedastic"),
-                      selected = "Normal"),
+          .adhoc_picker_input(ns("sim_innov_dist"), "Innovation Distribution",
+                              choices = c("Normal", "Student's t", "Skew-t", "GED",
+                                          "Laplace", "Uniform", "Mixture Normal",
+                                          "GARCH", "Heteroscedastic"),
+                              selected = "Normal"),
 
           # --- Distribution-specific parameter panels ---
           conditionalPanel(
@@ -86,10 +148,10 @@ mod_adhoc_sim_ui <- function(id) {
           conditionalPanel(
             condition = "input.sim_innov_dist == 'Heteroscedastic'",
             ns = ns,
-            selectInput(ns("sim_hetero_shape"), "Weight Shape",
-                        choices = c("linear", "sqrt", "log", "power", "exp",
-                                    "step", "periodic"),
-                        selected = "linear"),
+            .adhoc_picker_input(ns("sim_hetero_shape"), "Weight Shape",
+                                choices = c("linear", "sqrt", "log", "power", "exp",
+                                            "step", "periodic"),
+                                selected = "linear"),
             conditionalPanel(
               condition = paste0(
                 "input.sim_hetero_shape == 'linear' || ",
@@ -135,13 +197,13 @@ mod_adhoc_sim_ui <- function(id) {
                        min = 1, max = 9999, step = 100),
           numericInput(ns("sim_maxp"), "Max AR Order (maxp)", value = 5,
                        min = 1, max = 20, step = 1),
-          selectInput(ns("sim_criterion"), "Information Criterion",
-                      choices = c("aic", "aicc", "bic"), selected = "aic"),
-          checkboxInput(ns("sim_bootadj"), "COBA Adjustment", value = FALSE),
-          checkboxInput(ns("sim_minp1"), "Minimum AR order = 1 (exclude AR(0))",
-                        value = TRUE),
-          checkboxInput(ns("sim_use_fast"), "Use fast innovation generators",
-                        value = FALSE),
+          .adhoc_picker_input(ns("sim_criterion"), "Information Criterion",
+                              choices = c("aic", "aicc", "bic"), selected = "aic"),
+          .adhoc_toggle_input(ns("sim_bootadj"), "COBA Adjustment", value = FALSE),
+          .adhoc_toggle_input(ns("sim_minp1"), "Minimum AR order = 1 (exclude AR(0))",
+                              value = TRUE),
+          .adhoc_toggle_input(ns("sim_use_fast"), "Use fast innovation generators",
+                              value = FALSE),
           numericInput(ns("sim_seed"), "Random Seed (empty = random)",
                         value = NA, min = 1, step = 1)
         )
@@ -176,7 +238,47 @@ mod_adhoc_sim_ui <- function(id) {
           ),
           tabPanel("Null Model Diagnostics",
             br(),
-            plotOutput(ns("sim_null_diag"), height = "900px")
+            fluidRow(
+              column(4,
+                selectInput(ns("sim_null_reject_mode"), "Rejection rates shown:",
+                            choices = c("All available" = "all",
+                                        "COB" = "cob",
+                                        "CO" = "co",
+                                        "COBA" = "coba"),
+                            selected = "all")
+              )
+            ),
+            wellPanel(
+              h5("Null Model Diagnostics (per-simulation)"),
+              plotOutput(ns("sim_null_diag"), height = "900px")
+            ),
+            fluidRow(
+              column(12,
+                wellPanel(
+                  h5("Estimated AR(1) Coefficient Distribution"),
+                  plotOutput(ns("sim_null_phi_dist"), height = "420px")
+                )
+              )
+            ),
+            fluidRow(
+              column(6,
+                wellPanel(
+                  h5("Test Statistic Distribution"),
+                  plotOutput(ns("sim_null_tstat"), height = "420px")
+                )
+              ),
+              column(6,
+                wellPanel(
+                  h5("Monte Carlo Convergence"),
+                  selectInput(ns("sim_null_conv_method"), "Method:",
+                              choices = c("Bootstrap (COB)" = "pvalue",
+                                          "Asymptotic (CO)" = "pvalue_asymp",
+                                          "COBA" = "pvalue_adj"),
+                              selected = "pvalue"),
+                  plotOutput(ns("sim_null_convergence"), height = "420px")
+                )
+              )
+            )
           ),
           tabPanel("Run Log",
             br(),
@@ -230,6 +332,207 @@ mod_adhoc_sim_server <- function(id) {
       }
       if (length(vals) == 0 || any(is.na(vals))) return(NULL)
       vals
+    }
+
+    .parse_num_list <- function(x) {
+      if (is.null(x)) return(numeric(0))
+      txt <- trimws(as.character(x))
+      if (!nzchar(txt)) return(numeric(0))
+      vals <- suppressWarnings(as.numeric(trimws(strsplit(txt, ",")[[1]])))
+      if (length(vals) == 0 || any(is.na(vals))) return(NULL)
+      vals
+    }
+
+    has_shinyvalidate <- requireNamespace("shinyvalidate", quietly = TRUE)
+    adhoc_validator <- NULL
+
+    if (has_shinyvalidate) {
+      v <- shinyvalidate::InputValidator$new()
+
+      .rule_number <- function(expr, msg) {
+        force(expr)
+        function(value) {
+          if (is.null(value) || is.na(value) || !isTRUE(expr(value))) msg else NULL
+        }
+      }
+
+      .rule_optional_integer <- function(min_val = 1L) {
+        force(min_val)
+        function(value) {
+          if (is.null(value) || is.na(value) || !nzchar(trimws(as.character(value)))) return(NULL)
+          int_val <- suppressWarnings(as.integer(value))
+          if (is.na(int_val) || int_val < min_val) {
+            sprintf("Must be an integer >= %d", as.integer(min_val))
+          } else {
+            NULL
+          }
+        }
+      }
+
+      .rule_when <- function(cond_fn, rule_fn) {
+        force(cond_fn)
+        force(rule_fn)
+        function(value) {
+          if (!isTRUE(cond_fn())) return(NULL)
+          rule_fn(value)
+        }
+      }
+
+      .rule_csv_nonneg <- function(required = TRUE) {
+        force(required)
+        function(value) {
+          vals <- .parse_num_list(value)
+          if (is.null(vals)) return("Must be a comma-separated numeric list")
+          if (length(vals) == 0) {
+            if (isTRUE(required)) return("Provide at least one value")
+            return(NULL)
+          }
+          if (any(vals < 0)) return("Values must be >= 0")
+          NULL
+        }
+      }
+
+      .rule_hetero_breaks <- function(value) {
+        brk <- .parse_num_list(value)
+        if (is.null(brk) || length(brk) == 0) return("Provide comma-separated numeric breaks")
+        if (any(brk <= 0 | brk >= 1)) return("Breaks must be between 0 and 1")
+        if (is.unsorted(brk, strictly = TRUE)) return("Breaks must be strictly increasing")
+        NULL
+      }
+
+      .rule_hetero_levels <- function(value) {
+        lvl <- .parse_num_list(value)
+        if (is.null(lvl) || length(lvl) == 0) return("Provide comma-separated numeric levels")
+        if (any(lvl <= 0)) return("Levels must be > 0")
+        brk <- .parse_num_list(input$sim_hetero_breaks)
+        if (!is.null(brk) && length(brk) > 0 && length(lvl) != length(brk) + 1) {
+          return("Levels count must equal breaks count + 1")
+        }
+        NULL
+      }
+
+      v$add_rule("sim_phi", .rule_number(function(x) is.numeric(x) && x >= 0 && x < 1,
+                                           "Must be in [0, 1)"))
+      v$add_rule("sim_n", .rule_number(function(x) as.integer(x) >= 10 && as.integer(x) <= 2000,
+                                         "Must be an integer from 10 to 2000"))
+      v$add_rule("sim_nsims", .rule_number(function(x) as.integer(x) >= 1,
+                                             "Must be an integer >= 1"))
+      v$add_rule("sim_nb", .rule_number(function(x) as.integer(x) >= 1,
+                                          "Must be an integer >= 1"))
+      v$add_rule("sim_maxp", .rule_number(function(x) as.integer(x) >= 1 && as.integer(x) <= 20,
+                                            "Must be an integer from 1 to 20"))
+      v$add_rule("sim_seed", .rule_optional_integer(min_val = 1L))
+
+      v$add_rule("sim_norm_sd", .rule_when(
+        function() identical(input$sim_innov_dist, "Normal"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_t_df", .rule_when(
+        function() identical(input$sim_innov_dist, "Student's t"),
+        .rule_number(function(x) x >= 1, "Must be >= 1")
+      ))
+      v$add_rule("sim_skt_df", .rule_when(
+        function() identical(input$sim_innov_dist, "Skew-t"),
+        .rule_number(function(x) x >= 3, "Must be >= 3")
+      ))
+      v$add_rule("sim_skt_alpha", .rule_when(
+        function() identical(input$sim_innov_dist, "Skew-t"),
+        .rule_number(function(x) is.finite(as.numeric(x)), "Must be numeric")
+      ))
+      v$add_rule("sim_ged_nu", .rule_when(
+        function() identical(input$sim_innov_dist, "GED"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_ged_sd", .rule_when(
+        function() identical(input$sim_innov_dist, "GED"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_lap_scale", .rule_when(
+        function() identical(input$sim_innov_dist, "Laplace"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_unif_hw", .rule_when(
+        function() identical(input$sim_innov_dist, "Uniform"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_mix_sd1", .rule_when(
+        function() identical(input$sim_innov_dist, "Mixture Normal"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_mix_sd2", .rule_when(
+        function() identical(input$sim_innov_dist, "Mixture Normal"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_mix_prob1", .rule_when(
+        function() identical(input$sim_innov_dist, "Mixture Normal"),
+        .rule_number(function(x) x > 0 && x < 1, "Must be between 0 and 1")
+      ))
+
+      v$add_rule("sim_garch_omega", .rule_when(
+        function() identical(input$sim_innov_dist, "GARCH"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_garch_alpha", .rule_when(
+        function() identical(input$sim_innov_dist, "GARCH"),
+        .rule_csv_nonneg(required = TRUE)
+      ))
+      v$add_rule("sim_garch_beta", .rule_when(
+        function() identical(input$sim_innov_dist, "GARCH"),
+        .rule_csv_nonneg(required = FALSE)
+      ))
+
+      v$add_rule("sim_hetero_sd", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_hetero_from", .rule_when(
+        function() {
+          identical(input$sim_innov_dist, "Heteroscedastic") &&
+            input$sim_hetero_shape %in% c("linear", "sqrt", "log", "power", "exp")
+        },
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_hetero_to", .rule_when(
+        function() {
+          identical(input$sim_innov_dist, "Heteroscedastic") &&
+            input$sim_hetero_shape %in% c("linear", "sqrt", "log", "power", "exp")
+        },
+        function(value) {
+          to_val <- suppressWarnings(as.numeric(value))
+          from_val <- suppressWarnings(as.numeric(input$sim_hetero_from))
+          if (is.na(to_val) || to_val <= 0) return("Must be > 0")
+          if (!is.na(from_val) && to_val < from_val) return("Must be >= From")
+          NULL
+        }
+      ))
+      v$add_rule("sim_hetero_power", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic") &&
+          identical(input$sim_hetero_shape, "power"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_hetero_breaks", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic") &&
+          identical(input$sim_hetero_shape, "step"),
+        .rule_hetero_breaks
+      ))
+      v$add_rule("sim_hetero_levels", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic") &&
+          identical(input$sim_hetero_shape, "step"),
+        .rule_hetero_levels
+      ))
+      v$add_rule("sim_hetero_base_w", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic") &&
+          identical(input$sim_hetero_shape, "periodic"),
+        .rule_number(function(x) x > 0, "Must be > 0")
+      ))
+      v$add_rule("sim_hetero_period", .rule_when(
+        function() identical(input$sim_innov_dist, "Heteroscedastic") &&
+          identical(input$sim_hetero_shape, "periodic"),
+        .rule_number(function(x) as.integer(x) >= 1, "Must be an integer >= 1")
+      ))
+
+      v$enable()
+      adhoc_validator <- v
     }
 
     .format_make_gen_call <- function(dist, params, use_fast) {
@@ -427,6 +730,13 @@ mod_adhoc_sim_server <- function(id) {
     # Run simulation
     observeEvent(input$sim_run, {
       run_log_rv("")
+      if (!is.null(adhoc_validator) && !isTRUE(adhoc_validator$is_valid())) {
+        .log_line("Aborted: invalid input configuration.")
+        showNotification("Please fix highlighted input errors before running.",
+                         type = "warning", duration = 5)
+        return()
+      }
+
       dist <- input$sim_innov_dist
       use_fast <- isTRUE(input$sim_use_fast)
 
@@ -943,78 +1253,71 @@ mod_adhoc_sim_server <- function(id) {
       results <- res$results
       nsims <- res$nsims
       fg <- viewer_plot_fg()
-      par(mfrow = c(3, 1), mar = c(5, 5, 3.5, 1.5),
-          col.axis = fg, col.lab = fg, col.main = fg, fg = fg)
+      reject_mode <- input$sim_null_reject_mode %||% "all"
+      plot_null_model_diagnostics(results, nsims = nsims, maxp = res$maxp,
+                                  min_p = res$min_p, fg = fg,
+                                  reject_mode = reject_mode)
+    })
 
-      # Extract diagnostics from all simulations
-      ar_orders <- vapply(results, function(r) r$p, integer(1))
-      varas <- vapply(results, function(r) r$vara, numeric(1))
-      pvals_boot <- vapply(results, function(r) r$pvalue, numeric(1))
-      pvals_asymp <- vapply(results, function(r) r$pvalue_asymp, numeric(1))
-
-      # --- Panel 1: AR Order Distribution ---
-      order_tbl <- table(factor(ar_orders, levels = 0:res$maxp))
-      base_cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f")
-      order_cols <- grDevices::colorRampPalette(base_cols)(res$maxp + 1)
-      barplot(order_tbl,
-              col = order_cols,
-              border = NA,
-              main = sprintf("Fitted Null AR Order  (n=%d sims, min_p=%d, maxp=%d)",
-                             nsims, res$min_p, res$maxp),
-              xlab = "AR Order", ylab = "Count")
-      # Annotate modal order
-      modal_order <- as.integer(names(which.max(order_tbl)))
-      modal_pct <- max(order_tbl) / nsims * 100
-      mtext(sprintf("Mode: AR(%d) = %.0f%%", modal_order, modal_pct),
-            side = 3, adj = 1, line = 0, cex = 1.0, col = fg)
-
-      # --- Panel 2: Innovation Variance Distribution ---
-      hist(varas, breaks = 30,
-           col = adjustcolor("steelblue", alpha.f = 0.6),
-           border = "white",
-           main = "Estimated Innovation Variance (null_vara)",
-           xlab = expression(hat(sigma)[a]^2), ylab = "Frequency")
-      abline(v = mean(varas), col = "#e41a1c", lwd = 2, lty = 1)
-      abline(v = median(varas), col = "#ff7f00", lwd = 2, lty = 2)
-      legend("topright",
-             legend = c(sprintf("Mean = %.4f", mean(varas)),
-                        sprintf("Median = %.4f", median(varas)),
-                        sprintf("SD = %.4f", sd(varas))),
-             col = c("#e41a1c", "#ff7f00", NA),
-             lwd = c(2, 2, NA), lty = c(1, 2, NA),
-             bty = "n", cex = 1.1, text.col = fg)
-
-      # --- Panel 3: Rejection Rate by AR Order ---
-      unique_orders <- sort(unique(ar_orders))
-      if (length(unique_orders) > 0) {
-        boot_rates <- numeric(length(unique_orders))
-        asymp_rates <- numeric(length(unique_orders))
-        counts <- integer(length(unique_orders))
-        for (j in seq_along(unique_orders)) {
-          idx <- ar_orders == unique_orders[j]
-          counts[j] <- sum(idx)
-          boot_rates[j] <- mean(pvals_boot[idx] < 0.05, na.rm = TRUE)
-          asymp_rates[j] <- mean(pvals_asymp[idx] < 0.05, na.rm = TRUE)
-        }
-
-        rate_mat <- rbind(boot_rates, asymp_rates)
-        colnames(rate_mat) <- paste0("AR(", unique_orders, ")\nn=", counts)
-        bp <- barplot(rate_mat, beside = TRUE,
-                      col = c("#377eb8", "#e41a1c"), border = NA,
-                      main = "Rejection Rate by Fitted AR Order",
-                      xlab = "AR Order (with sim count)", ylab = "Rejection Rate",
-                      ylim = c(0, max(0.15, max(rate_mat) * 1.2)))
-        abline(h = 0.05, lty = 2, col = "grey50", lwd = 1.5)
-        legend("topright",
-               legend = c("Bootstrap", "Asymptotic", "Nominal 0.05"),
-               col = c("#377eb8", "#e41a1c", "grey50"),
-               lwd = c(NA, NA, 1.5), lty = c(NA, NA, 2),
-               pch = c(15, 15, NA), pt.cex = 2,
-               bty = "n", cex = 1.1, text.col = fg)
-      } else {
-        plot.new()
-        text(0.5, 0.5, "No results to display", cex = 1.2, col = "grey50")
+    sim_null_df <- reactive({
+      res <- sim_results_rv()
+      if (is.null(res) || is.null(res$results) || length(res$results) == 0) {
+        return(data.frame())
       }
+
+      rows <- lapply(res$results, function(sim) {
+        phi_hat <- if (is.null(sim$phi) || length(sim$phi) == 0) NA_real_ else sim$phi[1]
+        data.frame(
+          null_ar_order = sim$p,
+          null_phi1 = phi_hat,
+          obs_stat = sim$tco_obs %||% sim$obs_stat %||% NA_real_,
+          pvalue = sim$pvalue,
+          pvalue_asymp = sim$pvalue_asymp,
+          pvalue_adj = if (is.null(sim$pvalue_adj)) NA_real_ else sim$pvalue_adj,
+          n = as.integer(res$n %||% NA_integer_),
+          phi = as.numeric(res$phi %||% NA_real_),
+          innov_dist = as.character(res$innov_dist %||% "Ad-Hoc"),
+          stringsAsFactors = FALSE
+        )
+      })
+
+      do.call(rbind, rows)
+    })
+
+    output$sim_null_phi_dist <- renderPlot(bg = "transparent", {
+      df <- sim_null_df()
+      if (nrow(df) == 0) {
+        plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg()); return()
+      }
+      p <- plot_ar_coefficient_distribution(df)
+      if (!is.null(p)) {
+        print(p)
+      } else {
+        plot.new(); text(0.5, 0.5, "No AR(1)-selected fits for this scenario", cex = 1.1, col = viewer_plot_fg())
+      }
+    })
+
+    output$sim_null_tstat <- renderPlot(bg = "transparent", {
+      df <- sim_null_df()
+      if (nrow(df) == 0 || all(is.na(df$obs_stat))) {
+        plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg()); return()
+      }
+      p <- plot_test_statistic_distribution(df[!is.na(df$obs_stat), ])
+      if (!is.null(p)) print(p)
+    })
+
+    output$sim_null_convergence <- renderPlot(bg = "transparent", {
+      df <- sim_null_df()
+      pval_col <- input$sim_null_conv_method %||% "pvalue"
+      if (nrow(df) == 0 || !pval_col %in% names(df)) {
+        plot.new(); text(0.5, 0.5, "No data", cex = 1.2, col = viewer_plot_fg()); return()
+      }
+      method_labels <- c(pvalue = "Bootstrap (COB)",
+                         pvalue_asymp = "Asymptotic (CO)",
+                         pvalue_adj = "COBA")
+      p <- plot_mc_convergence(df, pval_col = pval_col,
+                               method_label = method_labels[pval_col])
+      if (!is.null(p)) print(p)
     })
 
     # --- Performance Profile sub-tab ---
