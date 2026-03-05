@@ -397,10 +397,26 @@ mod_capstone_server <- function(id) {
       force(expr)
     }
 
+    .has_nonblank_value <- function(x) {
+      if (is.null(x)) return(FALSE)
+      any(nzchar(trimws(as.character(x))))
+    }
+
     .parse_num_list_or_null <- function(x) {
-      if (is.null(x) || !nzchar(trimws(x))) return(numeric(0))
-      vals <- suppressWarnings(as.numeric(strsplit(x, "\\s*,\\s*")[[1]]))
-      vals[!is.na(vals)]
+      if (is.null(x)) return(NULL)
+
+      txt <- trimws(as.character(x))
+      txt <- txt[nzchar(txt)]
+      if (length(txt) == 0) return(NULL)
+
+      if (length(txt) == 1 && grepl(",", txt, fixed = TRUE)) {
+        txt <- trimws(strsplit(txt, "\\s*,\\s*")[[1]])
+      }
+
+      vals <- suppressWarnings(as.numeric(txt))
+      vals <- vals[!is.na(vals)]
+      if (length(vals) == 0) return(NULL)
+      vals
     }
 
     .validate_add_row <- function(innov_label, params, phi_val, n_val) {
@@ -430,9 +446,9 @@ mod_capstone_server <- function(id) {
         if (length(alpha) == 0 || any(alpha < 0)) {
           errs <- c(errs, "GARCH alpha must be a comma-separated list of non-negative numbers.")
         }
-        if (!is.null(params$garch_beta) && nzchar(trimws(as.character(params$garch_beta)))) {
-          beta <- .parse_num_list(params$garch_beta)
-          if (length(beta) == 0 || any(beta < 0)) {
+        if (.has_nonblank_value(params$garch_beta)) {
+          beta <- .parse_num_list_or_null(params$garch_beta)
+          if (is.null(beta) || any(beta < 0)) {
             errs <- c(errs, "GARCH beta must be a comma-separated list of non-negative numbers.")
           }
         }
