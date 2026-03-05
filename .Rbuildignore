@@ -17,3 +17,13 @@
 ^src/Makevars$
 ^src/Makevars\.win$
 ^openspec
+^Rplots\.pdf$
+^config$
+^opencode\.json$
+^simulations$
+^\.mcp\.json$
+^\.codemogger$
+^\.codex$
+^\.memelord$
+^\.rshiny-docs$
+^\.cachebro$

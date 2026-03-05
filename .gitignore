@@ -25,3 +25,8 @@ openspec/
 .mcp.json
 config/
 opencode.json
+
+Rplots.pdf
+simulations/
+.codemogger/
+.cachebro
